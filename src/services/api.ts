@@ -106,6 +106,13 @@ export const api = {
     })
   },
 
+  submitCodingSchemeText(projectId: string, text: string) {
+    return request<SchemeItemResponse[]>(`/projects/${projectId}/coding-scheme/text`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    })
+  },
+
   processProject(projectId: string) {
     return request<{ message: string }>(`/projects/${projectId}/process`, {
       method: 'POST',

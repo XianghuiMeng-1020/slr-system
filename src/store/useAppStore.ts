@@ -62,6 +62,7 @@ interface AppState {
   ensureValidProject: () => Promise<boolean>
   uploadDocuments: (files: File[]) => Promise<void>
   uploadCodingScheme: (file: File) => Promise<void>
+  submitCodingSchemeText: (text: string) => Promise<void>
   removeDocument: (id: string) => Promise<void>
   processDocuments: () => Promise<void>
   loadDocumentDetail: (docId: string) => Promise<void>
@@ -156,6 +157,26 @@ export const useAppStore = create<AppState>()(
           get().addToast('success', `Coding scheme loaded: ${items.length} items`)
         } catch (e: any) {
           get().addToast('error', `Scheme upload failed: ${e.message}`)
+        }
+      },
+
+      submitCodingSchemeText: async (text) => {
+        const { projectId } = get()
+        if (!projectId) return
+        try {
+          const items = await api.submitCodingSchemeText(projectId, text)
+          set({
+            codingScheme: items.map((i) => ({
+              id: i.id,
+              code: i.code,
+              description: i.description,
+              category: i.category,
+            })),
+            codingSchemeFileName: 'Pasted text',
+          })
+          get().addToast('success', `Coding scheme loaded: ${items.length} items`)
+        } catch (e: any) {
+          get().addToast('error', `Scheme parsing failed: ${e.message}`)
         }
       },
 

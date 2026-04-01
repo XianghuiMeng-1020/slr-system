@@ -24,11 +24,29 @@ def parse_coding_scheme(file_path: str, filename: str) -> list[dict]:
 
 
 def _parse_json(path: str) -> list[dict]:
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
+    return _normalize_json_data(data)
+
+
+def _normalize_json_data(data: object) -> list[dict]:
+    """Accept array of objects, or an object containing an array."""
     if isinstance(data, list):
-        return _normalize_items(data)
-    raise ValueError("JSON coding scheme must be an array of objects")
+        items = [x for x in data if isinstance(x, dict)]
+        if items:
+            return _normalize_items(items)
+        str_items = [x for x in data if isinstance(x, str)]
+        if str_items:
+            return _normalize_items(
+                [{"code": f"C{i+1}", "description": s} for i, s in enumerate(str_items)]
+            )
+        raise ValueError("JSON array contains no valid objects or strings")
+    if isinstance(data, dict):
+        for key in ("items", "codes", "scheme", "coding_scheme", "data"):
+            if key in data and isinstance(data[key], list):
+                return _normalize_json_data(data[key])
+        return _normalize_items([data])
+    raise ValueError("JSON must be an array or an object containing an array")
 
 
 def _parse_csv(path: str) -> list[dict]:
@@ -87,6 +105,47 @@ def _normalize_items(items: list[dict]) -> list[dict]:
             "category": str(category).strip() if category else None,
         })
     return result
+
+
+def parse_coding_scheme_text(text: str) -> list[dict]:
+    """Parse pasted text into coding scheme items. Supports JSON, CSV, or simple lines."""
+    text = text.strip()
+    if not text:
+        raise ValueError("Empty text")
+
+    if text.startswith("[") or text.startswith("{"):
+        try:
+            data = json.loads(text)
+            return _normalize_json_data(data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON: {e}")
+
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        raise ValueError("No content found")
+
+    if "," in lines[0] and len(lines[0].split(",")) >= 2:
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+        if rows and any(rows[0].values()):
+            return _normalize_items(rows)
+
+    items = []
+    for i, line in enumerate(lines):
+        if ":" in line:
+            parts = line.split(":", 1)
+            code = parts[0].strip()
+            desc = parts[1].strip()
+        elif "\t" in line:
+            parts = line.split("\t", 1)
+            code = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else code
+        else:
+            code = f"C{i+1}"
+            desc = line
+        items.append({"code": code, "description": desc})
+
+    return _normalize_items(items)
 
 
 def extract_zip(zip_path: str, dest_dir: str) -> list[str]:

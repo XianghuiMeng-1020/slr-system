@@ -13,6 +13,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  ClipboardPaste,
 } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
@@ -27,6 +28,7 @@ export default function UploadPage() {
   const uploadDocuments = useAppStore((s) => s.uploadDocuments)
   const removeDocument = useAppStore((s) => s.removeDocument)
   const uploadCodingScheme = useAppStore((s) => s.uploadCodingScheme)
+  const submitCodingSchemeText = useAppStore((s) => s.submitCodingSchemeText)
   const processDocuments = useAppStore((s) => s.processDocuments)
   const addToast = useAppStore((s) => s.addToast)
   const ensureValidProject = useAppStore((s) => s.ensureValidProject)
@@ -34,6 +36,9 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false)
   const [schemeDragActive, setSchemeDragActive] = useState(false)
   const [validating, setValidating] = useState(true)
+  const [schemeTab, setSchemeTab] = useState<'upload' | 'paste'>('upload')
+  const [pasteText, setPasteText] = useState('')
+  const [pasteSubmitting, setPasteSubmitting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -89,6 +94,16 @@ export default function UploadPage() {
     },
     [handleDocFiles, handleSchemeFile],
   )
+
+  const handlePasteSubmit = useCallback(async () => {
+    if (!pasteText.trim()) {
+      addToast('warning', 'Please paste your coding scheme first.')
+      return
+    }
+    setPasteSubmitting(true)
+    await submitCodingSchemeText(pasteText.trim())
+    setPasteSubmitting(false)
+  }, [pasteText, submitCodingSchemeText, addToast])
 
   const canProceed = documents.length > 0 && codingScheme.length > 0
 
@@ -255,7 +270,7 @@ export default function UploadPage() {
               )}
             </motion.div>
 
-            {/* Coding Scheme Upload */}
+            {/* Coding Scheme Upload / Paste */}
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="card">
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-100 text-accent-600">
@@ -263,39 +278,11 @@ export default function UploadPage() {
                 </div>
                 <div>
                   <h2 className="font-display text-lg font-semibold text-surface-900">Coding Scheme</h2>
-                  <p className="text-xs text-surface-400">Pre-defined coding categories — CSV or Excel</p>
+                  <p className="text-xs text-surface-400">Upload a file or paste your coding categories directly</p>
                 </div>
               </div>
 
-              {!codingSchemeFileName ? (
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setSchemeDragActive(true) }}
-                  onDragLeave={() => setSchemeDragActive(false)}
-                  onDrop={(e) => handleDrop(e, 'scheme')}
-                  className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all ${
-                    schemeDragActive ? 'border-accent-400 bg-accent-50' : 'border-surface-300 hover:border-accent-300 hover:bg-surface-50'
-                  }`}
-                  role="region"
-                  aria-label="Coding scheme upload area"
-                >
-                  <Table2 className={`h-10 w-10 mb-3 ${schemeDragActive ? 'text-accent-500' : 'text-surface-400'}`} />
-                  <p className="text-sm font-medium text-surface-700">Upload your coding scheme</p>
-                  <p className="mt-1 text-xs text-surface-400">CSV, XLSX, or JSON format</p>
-                  <label className="mt-3 cursor-pointer rounded-lg bg-accent-50 px-4 py-2 text-sm font-medium text-accent-600 hover:bg-accent-100 transition-colors">
-                    Browse Files
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".csv,.xlsx,.xls,.json"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0]
-                        if (f) handleSchemeFile(f)
-                        e.target.value = ''
-                      }}
-                    />
-                  </label>
-                </div>
-              ) : (
+              {codingScheme.length > 0 ? (
                 <div className="rounded-xl border border-green-200 bg-green-50 p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -303,7 +290,7 @@ export default function UploadPage() {
                       <span className="text-sm font-medium text-green-800">{codingSchemeFileName}</span>
                     </div>
                     <button
-                      onClick={() => useAppStore.setState({ codingScheme: [], codingSchemeFileName: null })}
+                      onClick={() => { useAppStore.setState({ codingScheme: [], codingSchemeFileName: null }); setPasteText('') }}
                       className="text-xs text-surface-400 hover:text-red-500"
                       aria-label="Remove coding scheme"
                     >
@@ -324,16 +311,95 @@ export default function UploadPage() {
                     ))}
                   </div>
                 </div>
+              ) : (
+                <>
+                  <div className="flex rounded-lg bg-surface-100 p-0.5 mb-4" role="tablist">
+                    <button
+                      role="tab"
+                      aria-selected={schemeTab === 'upload'}
+                      onClick={() => setSchemeTab('upload')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium transition-all ${
+                        schemeTab === 'upload' ? 'bg-white text-surface-900 shadow-sm' : 'text-surface-500 hover:text-surface-700'
+                      }`}
+                    >
+                      <Upload className="h-3.5 w-3.5" /> Upload File
+                    </button>
+                    <button
+                      role="tab"
+                      aria-selected={schemeTab === 'paste'}
+                      onClick={() => setSchemeTab('paste')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium transition-all ${
+                        schemeTab === 'paste' ? 'bg-white text-surface-900 shadow-sm' : 'text-surface-500 hover:text-surface-700'
+                      }`}
+                    >
+                      <ClipboardPaste className="h-3.5 w-3.5" /> Paste Text
+                    </button>
+                  </div>
+
+                  {schemeTab === 'upload' ? (
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setSchemeDragActive(true) }}
+                      onDragLeave={() => setSchemeDragActive(false)}
+                      onDrop={(e) => handleDrop(e, 'scheme')}
+                      className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all ${
+                        schemeDragActive ? 'border-accent-400 bg-accent-50' : 'border-surface-300 hover:border-accent-300 hover:bg-surface-50'
+                      }`}
+                      role="region"
+                      aria-label="Coding scheme upload area"
+                    >
+                      <Table2 className={`h-10 w-10 mb-3 ${schemeDragActive ? 'text-accent-500' : 'text-surface-400'}`} />
+                      <p className="text-sm font-medium text-surface-700">Upload your coding scheme</p>
+                      <p className="mt-1 text-xs text-surface-400">CSV, XLSX, or JSON format</p>
+                      <label className="mt-3 cursor-pointer rounded-lg bg-accent-50 px-4 py-2 text-sm font-medium text-accent-600 hover:bg-accent-100 transition-colors">
+                        Browse Files
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".csv,.xlsx,.xls,.json"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) handleSchemeFile(f)
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <textarea
+                        value={pasteText}
+                        onChange={(e) => setPasteText(e.target.value)}
+                        placeholder={'Paste your coding scheme here. Supported formats:\n\nJSON:  [{"code": "C1", "description": "..."}]\nCSV:   code,description\\nC1,My category\nLines: C1: Description of code 1\\nC2: Description of code 2'}
+                        className="w-full rounded-xl border border-surface-300 bg-surface-50 px-4 py-3 text-sm text-surface-700 placeholder:text-surface-400 focus:border-accent-300 focus:ring-1 focus:ring-accent-200 focus:outline-none resize-none font-mono"
+                        rows={8}
+                        aria-label="Paste coding scheme text"
+                      />
+                      <button
+                        onClick={handlePasteSubmit}
+                        disabled={!pasteText.trim() || pasteSubmitting}
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {pasteSubmitting ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Parsing...</>
+                        ) : (
+                          <><CheckCircle2 className="h-4 w-4" /> Apply Coding Scheme</>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="mt-4 flex items-start gap-2 rounded-lg bg-blue-50 p-3">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-blue-500" />
                 <p className="text-xs text-blue-700 leading-relaxed">
-                  Your coding scheme defines the categories used for analysis. The file should have columns for code, description, and optionally category.
-                  The system will use this to{' '}
-                  {mode === 'theme-verification'
-                    ? 'automatically label each document'
-                    : 'extract relevant evidence from each document'}.
+                  {schemeTab === 'paste' && codingScheme.length === 0
+                    ? 'Paste JSON, CSV, or simple "Code: Description" lines. Each line becomes one coding item.'
+                    : `Your coding scheme defines the categories used for analysis. The system will use this to ${
+                        mode === 'theme-verification'
+                          ? 'automatically label each document'
+                          : 'extract relevant evidence from each document'
+                      }.`}
                 </p>
               </div>
             </motion.div>

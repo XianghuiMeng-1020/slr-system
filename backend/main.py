@@ -94,6 +94,9 @@ class UpdateEvidenceReq(BaseModel):
     user_response: Optional[str] = None
     user_note: Optional[str] = None
 
+class CodingSchemeTextReq(BaseModel):
+    text: str
+
 class ProjectStatusRes(BaseModel):
     total: int
     completed: int
@@ -210,6 +213,45 @@ def upload_coding_scheme(
 
     if not items:
         raise HTTPException(400, "Coding scheme file is empty or contains no valid items")
+
+    created = []
+    for item in items:
+        db_item = CodingSchemeItem(
+            id=item["id"],
+            project_id=project_id,
+            code=item["code"],
+            description=item["description"],
+            category=item.get("category"),
+        )
+        db.add(db_item)
+        created.append(db_item)
+
+    db.commit()
+    return [
+        {"id": i.id, "code": i.code, "description": i.description, "category": i.category}
+        for i in created
+    ]
+
+
+@app.post("/api/projects/{project_id}/coding-scheme/text")
+def submit_coding_scheme_text(
+    project_id: str,
+    req: CodingSchemeTextReq,
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    db.query(CodingSchemeItem).filter(CodingSchemeItem.project_id == project_id).delete()
+
+    try:
+        items = file_service.parse_coding_scheme_text(req.text)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid coding scheme: {e}")
+
+    if not items:
+        raise HTTPException(400, "No valid coding scheme items found in the provided text")
 
     created = []
     for item in items:
