@@ -378,6 +378,9 @@ def process_project(project_id: str, db: Session = Depends(get_db)):
 
 @app.get("/api/projects/{project_id}/status", response_model=ProjectStatusRes)
 def get_project_status(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
     docs = db.query(Document).filter(Document.project_id == project_id).all()
     return ProjectStatusRes(
         total=len(docs),
