@@ -51,7 +51,9 @@ const modes: {
 export default function ModeSelectionPage() {
   const navigate = useNavigate()
   const createProject = useAppStore((s) => s.createProject)
+  const ensureValidProject = useAppStore((s) => s.ensureValidProject)
   const currentMode = useAppStore((s) => s.mode)
+  const projectId = useAppStore((s) => s.projectId)
   const [selectedMode, setSelectedMode] = useState<Mode | null>(currentMode)
   const [isCreating, setIsCreating] = useState(false)
 
@@ -63,6 +65,13 @@ export default function ModeSelectionPage() {
     if (!selectedMode) return
     setIsCreating(true)
     try {
+      if (selectedMode === currentMode && projectId) {
+        const valid = await ensureValidProject()
+        if (valid) {
+          navigate('/upload')
+          return
+        }
+      }
       await createProject(selectedMode)
       navigate('/upload')
     } catch {

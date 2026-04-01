@@ -119,6 +119,31 @@ def create_project(req: CreateProjectReq, db: Session = Depends(get_db)):
     return ProjectRes(id=project.id, mode=project.mode)
 
 
+class UpdateProjectReq(BaseModel):
+    mode: str
+
+
+@app.put("/api/projects/{project_id}")
+def update_project(project_id: str, req: UpdateProjectReq, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    project.mode = req.mode
+    db.query(DocumentLabel).filter(
+        DocumentLabel.document_id.in_(
+            db.query(Document.id).filter(Document.project_id == project_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(Evidence).filter(
+        Evidence.document_id.in_(
+            db.query(Document.id).filter(Document.project_id == project_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(Document).filter(Document.project_id == project_id).update({"status": "pending"})
+    db.commit()
+    return {"id": project.id, "mode": project.mode}
+
+
 @app.post("/api/projects/{project_id}/documents")
 def upload_documents(
     project_id: str,

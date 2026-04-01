@@ -88,6 +88,13 @@ export const api = {
     })
   },
 
+  updateProjectMode(projectId: string, mode: string) {
+    return request<ProjectResponse>(`/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ mode }),
+    })
+  },
+
   uploadDocuments(projectId: string, files: File[]) {
     const form = new FormData()
     files.forEach((f) => form.append('files', f))

@@ -92,9 +92,33 @@ export const useAppStore = create<AppState>()(
       setMode: (mode) => set({ mode }),
 
       createProject: async (mode) => {
+        const { projectId: existingId } = get()
+        if (existingId) {
+          const valid = await api.validateProject(existingId)
+          if (valid) {
+            try {
+              await api.updateProjectMode(existingId, mode)
+              set({
+                mode: mode as Mode,
+                documents: get().documents.map((d) => ({ ...d, labels: [], evidences: [], status: 'pending' as const })),
+                currentDocumentIndex: 0,
+              })
+              return existingId
+            } catch {
+              // fall through to create new
+            }
+          }
+        }
         try {
           const res = await api.createProject(mode)
-          set({ projectId: res.id, mode: mode as Mode })
+          set({
+            projectId: res.id,
+            mode: mode as Mode,
+            documents: [],
+            codingScheme: [],
+            codingSchemeFileName: null,
+            currentDocumentIndex: 0,
+          })
           return res.id
         } catch (e: any) {
           get().addToast('error', `Failed to create project: ${e.message}`)
