@@ -1,7 +1,6 @@
 from __future__ import annotations
 import json
 import os
-import uuid
 from dataclasses import dataclass
 
 from services.pdf_service import TextBlock
@@ -11,6 +10,10 @@ try:
     _openai_available = True
 except ImportError:
     _openai_available = False
+
+# Qwen (DashScope) defaults — overridable via env vars
+_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_DEFAULT_MODEL = "qwen-plus"
 
 
 @dataclass
@@ -29,17 +32,21 @@ class EvidenceResult:
 
 
 def _get_client() -> "OpenAI | None":
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key or not _openai_available:
         return None
-    return OpenAI(api_key=api_key)
+    base_url = os.getenv("LLM_BASE_URL", _DEFAULT_BASE_URL)
+    return OpenAI(api_key=api_key, base_url=base_url)
+
+
+def _get_model() -> str:
+    return os.getenv("LLM_MODEL", _DEFAULT_MODEL)
 
 
 def generate_labels(
     text_blocks: list[TextBlock],
     scheme: list[dict],
 ) -> list[LabelResult]:
-    """Use LLM to assign labels for each coding scheme item, with fallback to heuristic."""
     client = _get_client()
     if client:
         return _llm_generate_labels(client, text_blocks, scheme)
@@ -50,7 +57,6 @@ def extract_evidences(
     text_blocks: list[TextBlock],
     scheme: list[dict],
 ) -> list[EvidenceResult]:
-    """Use LLM to extract evidence passages, with fallback to heuristic."""
     client = _get_client()
     if client:
         return _llm_extract_evidences(client, text_blocks, scheme)
@@ -80,9 +86,10 @@ Document Text (excerpt):
 
 Return ONLY valid JSON array, no explanation."""
 
+    model = _get_model()
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=2000,
@@ -100,7 +107,8 @@ Return ONLY valid JSON array, no explanation."""
             )
             for r in results
         ]
-    except Exception:
+    except Exception as e:
+        print(f"[AI] Label generation failed ({model}): {e}")
         return _heuristic_labels(text_blocks, scheme)
 
 
@@ -133,9 +141,10 @@ Text Blocks:
 
 Return ONLY valid JSON array, no explanation."""
 
+    model = _get_model()
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=2000,
@@ -157,7 +166,8 @@ Return ONLY valid JSON array, no explanation."""
                     relevant_code_ids=r.get("relevant_code_ids", []),
                 ))
         return evidences
-    except Exception:
+    except Exception as e:
+        print(f"[AI] Evidence extraction failed ({model}): {e}")
         return _heuristic_evidences(text_blocks, scheme)
 
 
