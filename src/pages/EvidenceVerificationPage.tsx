@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -45,6 +45,19 @@ const EvidenceCard = memo(function EvidenceCard({
   onToggleNote: () => void
   onNoteChange: (note: string) => void
 }) {
+  const [localNote, setLocalNote] = useState(evidence.userNote || '')
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
+
+  useEffect(() => { setLocalNote(evidence.userNote || '') }, [evidence.userNote])
+
+  const handleLocalNoteChange = useCallback((value: string) => {
+    setLocalNote(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => onNoteChange(value), 500)
+  }, [onNoteChange])
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+
   return (
     <div
       className={`rounded-xl border-2 p-4 cursor-pointer transition-all duration-200 ${
@@ -128,8 +141,8 @@ const EvidenceCard = memo(function EvidenceCard({
                 <span className="text-xs font-medium text-surface-600">Optional Note</span>
               </div>
               <textarea
-                value={evidence.userNote || ''}
-                onChange={(e) => onNoteChange(e.target.value)}
+                value={localNote}
+                onChange={(e) => handleLocalNoteChange(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
                 placeholder="Add your reasoning or observations about this evidence..."
                 className="w-full rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 text-sm text-surface-700 placeholder:text-surface-400 focus:border-blue-300 focus:ring-1 focus:ring-blue-200 focus:outline-none resize-none"
@@ -146,10 +159,14 @@ const EvidenceCard = memo(function EvidenceCard({
 
 export default function EvidenceVerificationPage() {
   const navigate = useNavigate()
-  const {
-    documents, codingScheme, currentDocumentIndex, setCurrentDocumentIndex,
-    updateEvidence, loadDocumentDetail, projectId, addToast,
-  } = useAppStore()
+  const documents = useAppStore((s) => s.documents)
+  const codingScheme = useAppStore((s) => s.codingScheme)
+  const currentDocumentIndex = useAppStore((s) => s.currentDocumentIndex)
+  const setCurrentDocumentIndex = useAppStore((s) => s.setCurrentDocumentIndex)
+  const updateEvidence = useAppStore((s) => s.updateEvidence)
+  const loadDocumentDetail = useAppStore((s) => s.loadDocumentDetail)
+  const projectId = useAppStore((s) => s.projectId)
+  const addToast = useAppStore((s) => s.addToast)
 
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null)
   const [noteExpanded, setNoteExpanded] = useState<string | null>(null)
@@ -286,6 +303,7 @@ export default function EvidenceVerificationPage() {
                 className="flex-1 h-2 rounded-full bg-surface-100 overflow-hidden"
                 role="progressbar"
                 aria-valuenow={reviewedCount}
+                aria-valuemin={0}
                 aria-valuemax={totalCount}
                 aria-label={`${reviewedCount} of ${totalCount} evidence reviewed`}
               >

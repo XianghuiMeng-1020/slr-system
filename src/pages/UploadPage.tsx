@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -18,22 +18,32 @@ import { useAppStore } from '../store/useAppStore'
 
 export default function UploadPage() {
   const navigate = useNavigate()
-  const {
-    mode,
-    documents,
-    codingScheme,
-    codingSchemeFileName,
-    isProcessing,
-    isUploading,
-    uploadDocuments,
-    removeDocument,
-    uploadCodingScheme,
-    processDocuments,
-    addToast,
-  } = useAppStore()
+  const mode = useAppStore((s) => s.mode)
+  const documents = useAppStore((s) => s.documents)
+  const codingScheme = useAppStore((s) => s.codingScheme)
+  const codingSchemeFileName = useAppStore((s) => s.codingSchemeFileName)
+  const isProcessing = useAppStore((s) => s.isProcessing)
+  const isUploading = useAppStore((s) => s.isUploading)
+  const uploadDocuments = useAppStore((s) => s.uploadDocuments)
+  const removeDocument = useAppStore((s) => s.removeDocument)
+  const uploadCodingScheme = useAppStore((s) => s.uploadCodingScheme)
+  const processDocuments = useAppStore((s) => s.processDocuments)
+  const addToast = useAppStore((s) => s.addToast)
+  const ensureValidProject = useAppStore((s) => s.ensureValidProject)
 
   const [dragActive, setDragActive] = useState(false)
   const [schemeDragActive, setSchemeDragActive] = useState(false)
+  const [validating, setValidating] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    ensureValidProject().then((ok) => {
+      if (cancelled) return
+      setValidating(false)
+      if (!ok) navigate('/mode')
+    })
+    return () => { cancelled = true }
+  }, [ensureValidProject, navigate])
 
   const handleDocFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -86,6 +96,17 @@ export default function UploadPage() {
     if (!canProceed) return
     await processDocuments()
     navigate(mode === 'theme-verification' ? '/theme-verification' : '/evidence-verification')
+  }
+
+  if (validating) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-50">
+        <div className="text-center">
+          <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-primary-600" />
+          <p className="text-sm text-surface-400">Validating project...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -176,7 +197,10 @@ export default function UploadPage() {
                       className="hidden"
                       multiple
                       accept=".pdf,.zip"
-                      onChange={(e) => e.target.files && handleDocFiles(e.target.files)}
+                      onChange={(e) => {
+                        if (e.target.files) handleDocFiles(e.target.files)
+                        e.target.value = ''
+                      }}
                     />
                   </label>
                 )}
@@ -263,7 +287,11 @@ export default function UploadPage() {
                       type="file"
                       className="hidden"
                       accept=".csv,.xlsx,.xls,.json"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSchemeFile(f) }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) handleSchemeFile(f)
+                        e.target.value = ''
+                      }}
                     />
                   </label>
                 </div>

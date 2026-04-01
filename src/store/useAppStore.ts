@@ -56,10 +56,10 @@ interface AppState {
   isProcessing: boolean
   isUploading: boolean
   toasts: Toast[]
-  error: string | null
 
   setMode: (mode: Mode) => void
   createProject: (mode: Mode) => Promise<string>
+  ensureValidProject: () => Promise<boolean>
   uploadDocuments: (files: File[]) => Promise<void>
   uploadCodingScheme: (file: File) => Promise<void>
   removeDocument: (id: string) => Promise<void>
@@ -87,7 +87,6 @@ export const useAppStore = create<AppState>()(
       isProcessing: false,
       isUploading: false,
       toasts: [],
-      error: null,
 
       setMode: (mode) => set({ mode }),
 
@@ -99,6 +98,21 @@ export const useAppStore = create<AppState>()(
         } catch (e: any) {
           get().addToast('error', `Failed to create project: ${e.message}`)
           throw e
+        }
+      },
+
+      ensureValidProject: async () => {
+        const { projectId, mode } = get()
+        if (!projectId || !mode) return false
+        const valid = await api.validateProject(projectId)
+        if (valid) return true
+        try {
+          const res = await api.createProject(mode)
+          set({ projectId: res.id, documents: [], codingScheme: [], codingSchemeFileName: null })
+          return true
+        } catch (e: any) {
+          get().addToast('error', `Failed to recreate project: ${e.message}`)
+          return false
         }
       },
 
@@ -283,7 +297,6 @@ export const useAppStore = create<AppState>()(
           isProcessing: false,
           isUploading: false,
           toasts: [],
-          error: null,
         }),
     }),
     {

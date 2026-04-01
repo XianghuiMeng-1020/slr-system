@@ -151,6 +151,15 @@ export const api = {
     return request<SchemeItemResponse[]>(`/projects/${projectId}/coding-scheme`)
   },
 
+  async validateProject(projectId: string): Promise<boolean> {
+    try {
+      await request<ProjectStatusResponse>(`/projects/${projectId}/status`)
+      return true
+    } catch {
+      return false
+    }
+  },
+
   exportProject(projectId: string, format: 'excel' | 'csv' = 'excel') {
     return `${BASE}/projects/${projectId}/export?format=${format}`
   },

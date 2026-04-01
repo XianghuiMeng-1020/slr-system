@@ -108,11 +108,16 @@ const LabelCard = memo(function LabelCard({
 
 export default function ThemeVerificationPage() {
   const navigate = useNavigate()
-  const { documents, codingScheme, currentDocumentIndex, setCurrentDocumentIndex, updateLabel, loadDocumentDetail, projectId, addToast } =
-    useAppStore()
+  const documents = useAppStore((s) => s.documents)
+  const codingScheme = useAppStore((s) => s.codingScheme)
+  const currentDocumentIndex = useAppStore((s) => s.currentDocumentIndex)
+  const setCurrentDocumentIndex = useAppStore((s) => s.setCurrentDocumentIndex)
+  const updateLabel = useAppStore((s) => s.updateLabel)
+  const loadDocumentDetail = useAppStore((s) => s.loadDocumentDetail)
+  const projectId = useAppStore((s) => s.projectId)
+  const addToast = useAppStore((s) => s.addToast)
 
   const [editingLabel, setEditingLabel] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
 
   const currentDoc = documents[currentDocumentIndex]
 
@@ -136,10 +141,8 @@ export default function ThemeVerificationPage() {
     if (next >= 0 && next < documents.length) setCurrentDocumentIndex(next)
   }
 
-  const handleSave = async () => {
-    setSaving(true)
+  const handleSave = () => {
     addToast('success', 'All changes saved automatically')
-    setSaving(false)
   }
 
   const handleExport = () => {
@@ -205,8 +208,8 @@ export default function ThemeVerificationPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={handleSave} disabled={saving} className="btn-secondary text-sm py-2" aria-label="Save changes">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save
+          <button onClick={handleSave} className="btn-secondary text-sm py-2" aria-label="Save changes">
+            <Save className="h-4 w-4" /> Save
           </button>
           <button onClick={handleExport} className="btn-primary text-sm py-2" aria-label="Export results">
             <Download className="h-4 w-4" /> Export

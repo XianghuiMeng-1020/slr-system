@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, AlertTriangle } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -19,6 +19,7 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
   const [currentPage, setCurrentPage] = useState(1)
   const [zoom, setZoom] = useState(1.2)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const highlightCanvasRef = useRef<HTMLCanvasElement>(null)
   const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null)
@@ -28,14 +29,17 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
     if (!pdfUrl) return
     let cancelled = false
     setLoading(true)
+    setError(null)
     pdfjsLib.getDocument(pdfUrl).promise.then((doc) => {
       if (cancelled) return
       pdfDocRef.current = doc
       setPageCount(doc.numPages)
       setCurrentPage(1)
       setLoading(false)
-    }).catch(() => {
-      if (!cancelled) setLoading(false)
+    }).catch((err) => {
+      if (cancelled) return
+      setLoading(false)
+      setError(err?.message || 'Failed to load PDF. The file may be unavailable or corrupted.')
     })
     return () => { cancelled = true }
   }, [pdfUrl])
@@ -161,7 +165,19 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
       </div>
 
       <div className="flex-1 overflow-auto p-4 flex justify-center">
-        {loading ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center h-full text-center px-6">
+            <AlertTriangle className="h-10 w-10 text-red-400 mb-3" />
+            <p className="text-sm font-medium text-surface-700 mb-1">Failed to load PDF</p>
+            <p className="text-xs text-surface-400 max-w-xs">{error}</p>
+            <button
+              onClick={() => { setError(null); setLoading(true); if (pdfUrl) { pdfjsLib.getDocument(pdfUrl).promise.then((doc) => { pdfDocRef.current = doc; setPageCount(doc.numPages); setCurrentPage(1); setLoading(false) }).catch((e) => { setLoading(false); setError(e?.message || 'Retry failed') }) } }}
+              className="mt-4 rounded-lg bg-primary-50 px-4 py-2 text-sm font-medium text-primary-600 hover:bg-primary-100 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
           </div>

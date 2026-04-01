@@ -36,7 +36,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
@@ -130,15 +131,24 @@ def upload_documents(
 
     created_docs = []
     for f in files:
-        file_path = os.path.join(project_dir, f"{uuid.uuid4().hex[:8]}_{f.filename}")
+        fname_lower = (f.filename or "").lower()
+        if not fname_lower.endswith(".pdf") and not fname_lower.endswith(".zip"):
+            raise HTTPException(400, f"Unsupported file type: {f.filename}. Only PDF and ZIP files are accepted.")
+
+        safe_name = os.path.basename(f.filename or "file")
+        file_path = os.path.join(project_dir, f"{uuid.uuid4().hex[:8]}_{safe_name}")
         with open(file_path, "wb") as buf:
             shutil.copyfileobj(f.file, buf)
 
-        if f.filename.lower().endswith(".zip"):
+        if fname_lower.endswith(".zip"):
             pdf_paths = file_service.extract_zip(file_path, project_dir)
             os.remove(file_path)
             for pp in pdf_paths:
-                page_count = pdf_service.get_page_count(pp)
+                try:
+                    page_count = pdf_service.get_page_count(pp)
+                except Exception:
+                    os.remove(pp)
+                    continue
                 doc = Document(
                     id=uuid.uuid4().hex[:12],
                     project_id=project_id,
@@ -150,7 +160,11 @@ def upload_documents(
                 db.add(doc)
                 created_docs.append(doc)
         else:
-            page_count = pdf_service.get_page_count(file_path)
+            try:
+                page_count = pdf_service.get_page_count(file_path)
+            except Exception:
+                os.remove(file_path)
+                raise HTTPException(400, f"Failed to read PDF: {f.filename}. The file may be corrupted.")
             doc = Document(
                 id=uuid.uuid4().hex[:12],
                 project_id=project_id,
@@ -187,7 +201,16 @@ def upload_coding_scheme(
     with open(file_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    items = file_service.parse_coding_scheme(file_path, file.filename)
+    try:
+        items = file_service.parse_coding_scheme(file_path, file.filename)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid coding scheme: {e}")
+    except Exception as e:
+        raise HTTPException(400, f"Failed to parse coding scheme: {e}")
+
+    if not items:
+        raise HTTPException(400, "Coding scheme file is empty or contains no valid items")
+
     created = []
     for item in items:
         db_item = CodingSchemeItem(
@@ -403,6 +426,10 @@ def export_project(
     format: str = Query("excel", pattern="^(excel|csv)$"),
     db: Session = Depends(get_db),
 ):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+
     if format == "csv":
         csv_data = export_service.export_project_csv(db, project_id)
         return Response(
