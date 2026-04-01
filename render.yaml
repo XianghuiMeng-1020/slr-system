@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: slr-system-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://slr-system.pages.dev
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: slr-data
+      mountPath: /app/data
+      sizeGB: 1

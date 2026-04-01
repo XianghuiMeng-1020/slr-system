@@ -1,0 +1,163 @@
+const BASE = import.meta.env.VITE_API_BASE_URL
+  ? `${import.meta.env.VITE_API_BASE_URL}/api`
+  : '/api'
+
+class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, {
+    ...init,
+    headers: {
+      ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...init?.headers,
+    },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new ApiError(res.status, body || res.statusText)
+  }
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json')) return res.json()
+  return res as unknown as T
+}
+
+export interface ProjectResponse {
+  id: string
+  mode: string
+}
+
+export interface DocumentResponse {
+  id: string
+  filename: string
+  page_count: number
+  status: string
+}
+
+export interface SchemeItemResponse {
+  id: string
+  code: string
+  description: string
+  category: string | null
+}
+
+export interface LabelResponse {
+  id: string
+  scheme_item_id: string
+  value: string
+  confidence: number | null
+  user_override: string | null
+}
+
+export interface EvidenceResponse {
+  id: string
+  text: string
+  page: number
+  bbox_json: { x: number; y: number; width: number; height: number } | null
+  relevant_code_ids: string[]
+  user_response: string | null
+  user_note: string | null
+}
+
+export interface DocumentDetailResponse {
+  id: string
+  filename: string
+  page_count: number
+  status: string
+  labels: LabelResponse[]
+  evidences: EvidenceResponse[]
+}
+
+export interface ProjectStatusResponse {
+  total: number
+  completed: number
+  processing: number
+  pending: number
+}
+
+export const api = {
+  createProject(mode: string) {
+    return request<ProjectResponse>('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    })
+  },
+
+  uploadDocuments(projectId: string, files: File[]) {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    return request<DocumentResponse[]>(`/projects/${projectId}/documents`, {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  uploadCodingScheme(projectId: string, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    return request<SchemeItemResponse[]>(`/projects/${projectId}/coding-scheme`, {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  processProject(projectId: string) {
+    return request<{ message: string }>(`/projects/${projectId}/process`, {
+      method: 'POST',
+    })
+  },
+
+  getProjectStatus(projectId: string) {
+    return request<ProjectStatusResponse>(`/projects/${projectId}/status`)
+  },
+
+  listDocuments(projectId: string) {
+    return request<DocumentResponse[]>(`/projects/${projectId}/documents`)
+  },
+
+  getDocumentDetail(projectId: string, docId: string) {
+    return request<DocumentDetailResponse>(`/projects/${projectId}/documents/${docId}`)
+  },
+
+  getDocumentPdfUrl(projectId: string, docId: string) {
+    return `${BASE}/projects/${projectId}/documents/${docId}/pdf`
+  },
+
+  updateLabels(projectId: string, docId: string, labels: { scheme_item_id: string; value: string }[]) {
+    return request<{ message: string }>(`/projects/${projectId}/documents/${docId}/labels`, {
+      method: 'PUT',
+      body: JSON.stringify({ labels }),
+    })
+  },
+
+  updateEvidence(
+    projectId: string,
+    docId: string,
+    evidenceId: string,
+    data: { user_response?: string; user_note?: string },
+  ) {
+    return request<{ message: string }>(`/projects/${projectId}/documents/${docId}/evidences`, {
+      method: 'PUT',
+      body: JSON.stringify({ evidence_id: evidenceId, ...data }),
+    })
+  },
+
+  getCodingScheme(projectId: string) {
+    return request<SchemeItemResponse[]>(`/projects/${projectId}/coding-scheme`)
+  },
+
+  exportProject(projectId: string, format: 'excel' | 'csv' = 'excel') {
+    return `${BASE}/projects/${projectId}/export?format=${format}`
+  },
+
+  deleteDocument(projectId: string, docId: string) {
+    return request<{ message: string }>(`/projects/${projectId}/documents/${docId}`, {
+      method: 'DELETE',
+    })
+  },
+}
