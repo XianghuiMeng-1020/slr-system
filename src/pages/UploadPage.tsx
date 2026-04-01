@@ -298,17 +298,29 @@ export default function UploadPage() {
                     </button>
                   </div>
                   <div className="max-h-52 overflow-y-auto space-y-1.5">
-                    {codingScheme.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-100 text-xs font-bold text-accent-700">
-                          {item.code}
-                        </span>
-                        <span className="text-surface-700">{item.description}</span>
-                        {item.category && (
-                          <span className="ml-auto text-xs text-surface-400 bg-surface-100 px-2 py-0.5 rounded-full">{item.category}</span>
-                        )}
-                      </div>
-                    ))}
+                    {codingScheme.map((item, idx) => {
+                      const isShortCode = item.code.length <= 4
+                      const codeIsSameAsDesc = item.code.toLowerCase() === item.description.toLowerCase()
+                      return (
+                        <div key={item.id} className="flex items-start gap-2.5 rounded-lg bg-white px-3 py-2 text-sm">
+                          <span className="shrink-0 mt-0.5 flex items-center justify-center rounded-full bg-accent-100 text-xs font-semibold text-accent-700 h-5 w-5">
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            {!codeIsSameAsDesc && isShortCode && (
+                              <span className="inline-block rounded bg-accent-50 px-1.5 py-0.5 text-xs font-bold text-accent-700 mr-2">{item.code}</span>
+                            )}
+                            <span className="text-surface-700">{codeIsSameAsDesc ? item.code : item.description}</span>
+                            {!codeIsSameAsDesc && !isShortCode && (
+                              <p className="text-xs text-surface-400 mt-0.5 truncate">{item.code}</p>
+                            )}
+                          </div>
+                          {item.category && (
+                            <span className="shrink-0 text-xs text-surface-400 bg-surface-100 px-2 py-0.5 rounded-full">{item.category}</span>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               ) : (

@@ -47,12 +47,18 @@ const LabelCard = memo(function LabelCard({
       className={`rounded-xl border p-3 transition-all ${isEditing ? 'border-primary-300 bg-primary-50/50 shadow-sm' : config.bg}`}
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-xs font-bold text-surface-700 shadow-sm border border-surface-200">
-            {schemeItem.code}
-          </span>
-          <div>
-            <p className="text-sm font-medium text-surface-800">{schemeItem.description}</p>
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {schemeItem.code.length <= 4 ? (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-bold text-surface-700 shadow-sm border border-surface-200">
+              {schemeItem.code}
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-xs font-bold text-surface-700 shadow-sm border border-surface-200 max-w-[120px] truncate">
+              {schemeItem.code}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-surface-800 truncate">{schemeItem.description}</p>
             {label?.confidence != null && (
               <div className="mt-1 flex items-center gap-2">
                 <div
