@@ -11,7 +11,6 @@ import {
   Download,
   ArrowLeft,
   FileText,
-  BarChart3,
   Loader2,
 } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
@@ -20,10 +19,10 @@ import PDFViewer from '../components/PDFViewer'
 
 type LabelValue = 'Present' | 'Absent' | 'Unclear'
 
-const labelConfig: Record<LabelValue, { icon: typeof CheckCircle2; color: string; bg: string }> = {
-  Present: { icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
-  Absent: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50 border-red-200' },
-  Unclear: { icon: HelpCircle, color: 'text-amber-500', bg: 'bg-amber-50 border-amber-200' },
+const labelConfig: Record<LabelValue, { icon: typeof CheckCircle2; color: string; bg: string; pill: string }> = {
+  Present: { icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', pill: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+  Absent: { icon: XCircle, color: 'text-rose-500', bg: 'bg-rose-50 border-rose-200', pill: 'bg-rose-100 text-rose-700 border-rose-300' },
+  Unclear: { icon: HelpCircle, color: 'text-amber-500', bg: 'bg-amber-50/60 border-amber-200', pill: 'bg-amber-100 text-amber-700 border-amber-300' },
 }
 
 const LabelCard = memo(function LabelCard({
@@ -41,71 +40,65 @@ const LabelCard = memo(function LabelCard({
 }) {
   const value = (label?.value || 'Unclear') as LabelValue
   const config = labelConfig[value]
+  const Icon = config.icon
+  const codeIsSameAsDesc = schemeItem.code.toLowerCase() === schemeItem.description.toLowerCase()
+  const displayText = codeIsSameAsDesc ? schemeItem.code : schemeItem.description
 
   return (
     <div
-      className={`rounded-xl border p-3 transition-all ${isEditing ? 'border-primary-300 bg-primary-50/50 shadow-sm' : config.bg}`}
+      className={`group rounded-lg border p-3.5 transition-all cursor-pointer ${
+        isEditing
+          ? 'border-primary-300 bg-primary-50/40 shadow-sm ring-1 ring-primary-200'
+          : `${config.bg} hover:shadow-sm`
+      }`}
+      onClick={onEdit}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          {schemeItem.code.length <= 4 ? (
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-bold text-surface-700 shadow-sm border border-surface-200">
-              {schemeItem.code}
-            </span>
-          ) : (
-            <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-xs font-bold text-surface-700 shadow-sm border border-surface-200 max-w-[120px] truncate">
-              {schemeItem.code}
-            </span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-surface-800 leading-snug">{displayText}</p>
+          {!codeIsSameAsDesc && schemeItem.code.length > 4 && (
+            <p className="text-[11px] text-surface-400 mt-0.5 leading-tight">{schemeItem.code}</p>
           )}
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-surface-800 truncate">{schemeItem.description}</p>
-            {label?.confidence != null && (
-              <div className="mt-1 flex items-center gap-2">
+          {label?.confidence != null && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="h-1 w-16 rounded-full bg-surface-200 overflow-hidden">
                 <div
-                  className="h-1.5 w-20 rounded-full bg-surface-200"
-                  role="progressbar"
-                  aria-valuenow={Math.round(label.confidence * 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`Confidence: ${Math.round(label.confidence * 100)}%`}
-                >
-                  <div className="h-full rounded-full bg-primary-500" style={{ width: `${label.confidence * 100}%` }} />
-                </div>
-                <span className="text-xs text-surface-400">{Math.round(label.confidence * 100)}% conf.</span>
+                  className={`h-full rounded-full ${value === 'Present' ? 'bg-emerald-400' : value === 'Absent' ? 'bg-rose-400' : 'bg-amber-400'}`}
+                  style={{ width: `${label.confidence * 100}%` }}
+                />
               </div>
-            )}
-          </div>
+              <span className="text-[10px] text-surface-400 tabular-nums">{Math.round(label.confidence * 100)}%</span>
+            </div>
+          )}
         </div>
 
         {isEditing ? (
-          <div className="flex items-center gap-1" role="radiogroup" aria-label={`Label for ${schemeItem.description}`}>
+          <div className="flex items-center gap-1 shrink-0" role="radiogroup" aria-label={`Label for ${displayText}`}>
             {(['Present', 'Absent', 'Unclear'] as LabelValue[]).map((v) => {
               const c = labelConfig[v]
+              const VIcon = c.icon
+              const selected = value === v
               return (
                 <button
                   key={v}
-                  onClick={() => onChange(v)}
+                  onClick={(e) => { e.stopPropagation(); onChange(v) }}
                   role="radio"
-                  aria-checked={value === v}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                    value === v ? `${c.bg} border ${c.color}` : 'bg-surface-100 text-surface-500 hover:bg-surface-200'
+                  aria-checked={selected}
+                  className={`flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-all ${
+                    selected ? `${c.pill} shadow-sm` : 'border-transparent bg-surface-100 text-surface-400 hover:bg-surface-200 hover:text-surface-600'
                   }`}
                 >
+                  <VIcon className="h-3 w-3" />
                   {v}
                 </button>
               )
             })}
           </div>
         ) : (
-          <button
-            onClick={onEdit}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${config.bg} ${config.color}`}
-            aria-label={`Edit label: currently ${value}`}
-            aria-expanded={false}
-          >
-            <config.icon className="h-3.5 w-3.5" />
+          <span className={`shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${config.pill}`}>
+            <Icon className="h-3 w-3" />
             {value}
-          </button>
+          </span>
         )}
       </div>
     </div>
@@ -147,14 +140,8 @@ export default function ThemeVerificationPage() {
     if (next >= 0 && next < documents.length) setCurrentDocumentIndex(next)
   }
 
-  const handleSave = () => {
-    addToast('success', 'All changes saved automatically')
-  }
-
   const handleExport = () => {
-    if (projectId) {
-      window.open(api.exportProject(projectId, 'excel'), '_blank')
-    }
+    if (projectId) window.open(api.exportProject(projectId, 'excel'), '_blank')
   }
 
   if (!currentDoc) {
@@ -172,7 +159,7 @@ export default function ThemeVerificationPage() {
 
   const groupedScheme = codingScheme.reduce(
     (acc, item) => {
-      const cat = item.category || 'Uncategorized'
+      const cat = item.category || 'General'
       if (!acc[cat]) acc[cat] = []
       acc[cat].push(item)
       return acc
@@ -180,95 +167,102 @@ export default function ThemeVerificationPage() {
     {} as Record<string, typeof codingScheme>,
   )
 
+  const presentCount = currentDoc.labels.filter((l) => l.value === 'Present').length
+  const absentCount = currentDoc.labels.filter((l) => l.value === 'Absent').length
+  const unclearCount = currentDoc.labels.filter((l) => l.value === 'Unclear').length
+
   return (
-    <div className="flex h-screen flex-col bg-surface-100">
-      <div className="flex items-center justify-between border-b border-surface-200 bg-white px-4 py-3">
+    <div className="flex h-screen flex-col bg-surface-50">
+      {/* Top bar */}
+      <div className="flex items-center justify-between border-b border-surface-200 bg-white px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/upload')}
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-surface-600 hover:bg-surface-100 transition-colors"
-            aria-label="Back to upload"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-surface-500 hover:bg-surface-100 hover:text-surface-700 transition-colors"
           >
-            <ArrowLeft className="h-4 w-4" /> Back
+            <ArrowLeft className="h-3.5 w-3.5" /> Back
           </button>
-          <div className="h-5 w-px bg-surface-200" aria-hidden="true" />
+          <div className="h-4 w-px bg-surface-200" />
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white">
-              <BookOpen className="h-4 w-4" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-600 text-white">
+              <BookOpen className="h-3.5 w-3.5" />
             </div>
-            <span className="font-display font-bold text-surface-900">Theme Verification</span>
+            <span className="font-display text-sm font-bold text-surface-900">Theme Verification</span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button onClick={() => goToDoc(-1)} disabled={currentDocumentIndex <= 0} className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 disabled:opacity-30" aria-label="Previous document">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-primary-500" />
-            <span className="text-sm font-medium text-surface-700">{currentDocumentIndex + 1} / {documents.length}</span>
-          </div>
-          <button onClick={() => goToDoc(1)} disabled={currentDocumentIndex >= documents.length - 1} className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 disabled:opacity-30" aria-label="Next document">
-            <ChevronRight className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={handleSave} className="btn-secondary text-sm py-2" aria-label="Save changes">
-            <Save className="h-4 w-4" /> Save
+          <button onClick={() => goToDoc(-1)} disabled={currentDocumentIndex <= 0} className="rounded p-1 text-surface-400 hover:bg-surface-100 disabled:opacity-30" aria-label="Previous document">
+            <ChevronLeft className="h-4 w-4" />
           </button>
-          <button onClick={handleExport} className="btn-primary text-sm py-2" aria-label="Export results">
-            <Download className="h-4 w-4" /> Export
+          <div className="flex items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5 text-primary-500" />
+            <span className="text-xs font-medium text-surface-600 tabular-nums">{currentDocumentIndex + 1} / {documents.length}</span>
+          </div>
+          <button onClick={() => goToDoc(1)} disabled={currentDocumentIndex >= documents.length - 1} className="rounded p-1 text-surface-400 hover:bg-surface-100 disabled:opacity-30" aria-label="Next document">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => addToast('success', 'All changes saved automatically')} className="btn-secondary text-xs py-1.5 px-3">
+            <Save className="h-3.5 w-3.5" /> Save
+          </button>
+          <button onClick={handleExport} className="btn-primary text-xs py-1.5 px-3">
+            <Download className="h-3.5 w-3.5" /> Export
           </button>
         </div>
       </div>
 
+      {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-1/2 p-3">
+        {/* PDF viewer */}
+        <div className="w-1/2 p-2">
           <PDFViewer pdfUrl={pdfUrl} fileName={currentDoc.name} />
         </div>
 
+        {/* Labels panel */}
         <div className="w-1/2 border-l border-surface-200 bg-white flex flex-col">
-          <div className="border-b border-surface-200 px-6 py-4">
+          <div className="px-5 py-3.5 border-b border-surface-100">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display text-lg font-semibold text-surface-900">Coding Labels</h2>
-                <p className="text-sm text-surface-500 truncate max-w-sm">{currentDoc.name}</p>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-surface-900">Coding Labels</h2>
+                <p className="text-[11px] text-surface-400 truncate max-w-[260px] mt-0.5">{currentDoc.name}</p>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-green-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> {currentDoc.labels.filter((l) => l.value === 'Present').length}
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  <CheckCircle2 className="h-3 w-3" /> {presentCount}
                 </span>
-                <span className="flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-red-600">
-                  <XCircle className="h-3.5 w-3.5" /> {currentDoc.labels.filter((l) => l.value === 'Absent').length}
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
+                  <XCircle className="h-3 w-3" /> {absentCount}
                 </span>
-                <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-amber-600">
-                  <HelpCircle className="h-3.5 w-3.5" /> {currentDoc.labels.filter((l) => l.value === 'Unclear').length}
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
+                  <HelpCircle className="h-3 w-3" /> {unclearCount}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex-1 overflow-y-auto px-5 py-3">
             {currentDoc.labels.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-surface-400">
-                <Loader2 className="h-8 w-8 animate-spin mb-3" />
-                <p className="text-sm">Loading labels...</p>
+                <Loader2 className="h-7 w-7 animate-spin mb-2" />
+                <p className="text-xs">Loading labels...</p>
               </div>
             ) : (
               Object.entries(groupedScheme).map(([category, items]) => (
-                <div key={category} className="mb-6">
-                  <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-surface-400">
-                    <BarChart3 className="h-3.5 w-3.5" /> {category}
-                  </h3>
-                  <div className="space-y-2">
+                <div key={category} className="mb-5 last:mb-0">
+                  {Object.keys(groupedScheme).length > 1 && (
+                    <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-surface-400">{category}</h3>
+                  )}
+                  <div className="space-y-1.5">
                     {items.map((schemeItem) => (
                       <LabelCard
                         key={schemeItem.id}
                         schemeItem={schemeItem}
                         label={currentDoc.labels.find((l) => l.schemeItemId === schemeItem.id)}
                         isEditing={editingLabel === schemeItem.id}
-                        onEdit={() => setEditingLabel(schemeItem.id)}
+                        onEdit={() => setEditingLabel(editingLabel === schemeItem.id ? null : schemeItem.id)}
                         onChange={(v) => handleLabelChange(schemeItem.id, v)}
                       />
                     ))}
@@ -278,14 +272,14 @@ export default function ThemeVerificationPage() {
             )}
           </div>
 
-          <div className="border-t border-surface-200 px-6 py-3 flex items-center justify-between bg-surface-50">
-            <span className="text-xs text-surface-400">Click any label to modify the AI suggestion</span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => goToDoc(-1)} disabled={currentDocumentIndex <= 0} className="btn-secondary text-xs py-1.5 px-3">
-                <ChevronLeft className="h-3.5 w-3.5" /> Previous
+          <div className="border-t border-surface-100 px-5 py-2.5 flex items-center justify-between bg-surface-50/50">
+            <span className="text-[10px] text-surface-400">Click any item to edit</span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => goToDoc(-1)} disabled={currentDocumentIndex <= 0} className="btn-secondary text-[11px] py-1 px-2.5">
+                <ChevronLeft className="h-3 w-3" /> Prev
               </button>
-              <button onClick={() => goToDoc(1)} disabled={currentDocumentIndex >= documents.length - 1} className="btn-primary text-xs py-1.5 px-3">
-                Next <ChevronRight className="h-3.5 w-3.5" />
+              <button onClick={() => goToDoc(1)} disabled={currentDocumentIndex >= documents.length - 1} className="btn-primary text-[11px] py-1 px-2.5">
+                Next <ChevronRight className="h-3 w-3" />
               </button>
             </div>
           </div>
