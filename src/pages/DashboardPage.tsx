@@ -1,16 +1,26 @@
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BarChart3, PieChart, FileText, Search, GitBranch, Grid3x3, Keyboard, Settings2, Moon, Sun, GitMerge } from 'lucide-react'
+import { BarChart3, PieChart, FileText, Search, GitBranch, Grid3x3, Keyboard, Settings2, GitMerge, Sparkles, BookOpen, Zap, ArrowRight } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
-import { useTheme } from '../context/ThemeContext'
+import { useAuthStore } from '../store/useAuthStore'
+import { phase2 } from '../services/api'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { theme, toggle } = useTheme()
   const documents = useAppStore((s) => s.documents)
+  const projectId = useAppStore((s) => s.projectId)
   const hydrateProjectData = useAppStore((s) => s.hydrateProjectData)
+  const user = useAuthStore((s) => s.user)
+
+  const [zoteroConnected, setZoteroConnected] = useState(false)
 
   useEffect(() => { hydrateProjectData() }, [hydrateProjectData])
+  useEffect(() => {
+    if (!projectId) return
+    phase2.zoteroStatus(projectId).then((z) => setZoteroConnected(z.connected)).catch(() => {})
+  }, [projectId])
+
+  const displayName = user?.email ? user.email.split('@')[0] : null
 
   const stats = useMemo(() => {
     let present = 0
@@ -34,29 +44,63 @@ export default function DashboardPage() {
 
   const labelTotal = Math.max(1, stats.present + stats.absent + stats.unclear)
   const reviewedPct = stats.totalEvidence > 0 ? Math.round((stats.reviewedEvidence / stats.totalEvidence) * 100) : 0
+  const isEmpty = documents.length === 0
 
   return (
-    <div className="min-h-screen bg-surface-50 p-6 dark:bg-surface-950">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <button onClick={() => navigate('/upload')} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-surface-600 border border-surface-200 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200">
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-          <div className="flex items-center gap-2 text-surface-700 dark:text-surface-100">
-            <BarChart3 className="h-5 w-5 text-primary-600" />
-            <h1 className="text-xl font-semibold">Project Dashboard</h1>
+    <div className="min-h-screen bg-surface-50 dark:bg-surface-950">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        {displayName && (
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-surface-900 dark:text-white">
+              Hi, {displayName}
+            </h1>
+            <p className="text-sm text-surface-500">Welcome to your project dashboard</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={toggle} className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900" aria-label="Toggle dark mode">
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <Link to="/conflicts" className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><GitMerge className="h-4 w-4" /> Conflicts</Link>
-            <Link to="/prisma" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><GitBranch className="h-4 w-4" /> PRISMA</Link>
-            <Link to="/analytics" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><Grid3x3 className="h-4 w-4" /> Heatmap</Link>
-            <Link to="/settings" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><Settings2 className="h-4 w-4" /> Phase 2</Link>
-            <Link to="/shortcuts" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><Keyboard className="h-4 w-4" /> Shortcuts</Link>
-            <Link to="/login" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900">Login</Link>
+        )}
+
+        {isEmpty && (
+          <div className="mb-8 rounded-2xl border border-primary-200 bg-gradient-to-br from-primary-50 to-white p-6 dark:border-primary-900 dark:from-primary-950/50 dark:to-surface-900">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100 text-primary-600 dark:bg-primary-900 dark:text-primary-300">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-surface-900 dark:text-white">Set up your project</h2>
+                <p className="mt-1 text-sm text-surface-500">Complete these steps to get started with your review.</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <SetupCard
+                    done={documents.length > 0}
+                    title="Upload documents"
+                    desc="Add PDFs for analysis"
+                    action={() => navigate('/upload')}
+                    icon={<FileText className="h-4 w-4" />}
+                  />
+                  <SetupCard
+                    done={zoteroConnected}
+                    title="Connect Zotero"
+                    desc="Import from your library"
+                    action={() => navigate('/settings')}
+                    icon={<BookOpen className="h-4 w-4" />}
+                  />
+                  <SetupCard
+                    done={false}
+                    title="Run AI analysis"
+                    desc="Process your documents"
+                    action={() => navigate('/upload')}
+                    icon={<Zap className="h-4 w-4" />}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
+        )}
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Link to="/conflicts" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:hover:bg-surface-800"><GitMerge className="h-4 w-4" /> Conflicts</Link>
+          <Link to="/prisma" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:hover:bg-surface-800"><GitBranch className="h-4 w-4" /> PRISMA</Link>
+          <Link to="/analytics" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:hover:bg-surface-800"><Grid3x3 className="h-4 w-4" /> Heatmap</Link>
+          <Link to="/settings" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:hover:bg-surface-800"><Settings2 className="h-4 w-4" /> Settings</Link>
+          <Link to="/shortcuts" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:hover:bg-surface-800"><Keyboard className="h-4 w-4" /> Shortcuts</Link>
         </div>
 
         <div className="grid gap-4 md:grid-cols-4">
@@ -87,6 +131,28 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function SetupCard({ done, title, desc, action, icon }: { done: boolean; title: string; desc: string; action: () => void; icon: React.ReactNode }) {
+  return (
+    <button
+      onClick={action}
+      className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+        done
+          ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30'
+          : 'border-surface-200 bg-white hover:border-primary-300 hover:bg-primary-50/50 dark:border-surface-700 dark:bg-surface-800 dark:hover:border-primary-800'
+      }`}
+    >
+      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${done ? 'bg-emerald-100 text-emerald-600' : 'bg-surface-100 text-surface-500 dark:bg-surface-700'}`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${done ? 'text-emerald-700 line-through dark:text-emerald-400' : 'text-surface-800 dark:text-surface-100'}`}>{title}</p>
+        <p className="text-xs text-surface-500">{desc}</p>
+      </div>
+      {!done && <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-surface-400" />}
+    </button>
   )
 }
 

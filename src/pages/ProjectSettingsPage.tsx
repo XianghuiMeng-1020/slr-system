@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Settings2, Sparkles, BookOpen, Database, Cloud } from 'lucide-react'
+import { Settings2, Sparkles, BookOpen, Database, Cloud } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 import { phase2 } from '../services/api'
 
@@ -136,14 +136,11 @@ export default function ProjectSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-50 p-6 dark:bg-surface-950">
-      <div className="mx-auto max-w-2xl">
-        <Link to="/dashboard" className="mb-6 inline-flex items-center gap-2 text-sm text-surface-500">
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Link>
+    <div className="min-h-screen bg-surface-50 dark:bg-surface-950">
+      <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6">
         <div className="flex items-center gap-2 mb-6">
-          <Settings2 className="h-8 w-8 text-accent-600" />
-          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Project settings (Phase 2)</h1>
+          <Settings2 className="h-7 w-7 text-accent-600" />
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Project Settings</h1>
         </div>
 
         <div className="space-y-4 rounded-xl border border-surface-200 bg-white p-6 dark:border-surface-700 dark:bg-surface-900">

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { CheckCircle2, Search, ArrowRight, ArrowLeft, BookOpen, Loader2 } from 'lucide-react'
+import { CheckCircle2, Search, ArrowRight, Loader2 } from 'lucide-react'
 import { useAppStore, type Mode } from '../store/useAppStore'
 
 const modes: {
@@ -83,37 +83,18 @@ export default function ModeSelectionPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-50 via-white to-primary-50/20">
-      <nav className="fixed top-0 inset-x-0 z-50 glass">
-        <div className="mx-auto max-w-7xl flex items-center justify-between px-6 py-4">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-3 text-surface-600 hover:text-surface-900 transition-colors"
-            aria-label="Return to home"
-          >
-            <ArrowLeft className="h-5 w-5" />
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white">
-                <BookOpen className="h-4 w-4" />
-              </div>
-              <span className="font-display font-bold text-surface-900">
-                SLR<span className="text-primary-600">System</span>
-              </span>
-            </div>
-          </button>
-          <div className="flex items-center gap-2 text-sm text-surface-400" role="navigation" aria-label="Progress">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">1</span>
-            Select Mode
-            <span className="mx-2 text-surface-300" aria-hidden="true">→</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-200 text-xs font-bold text-surface-500">2</span>
-            <span className="text-surface-400">Upload</span>
-            <span className="mx-2 text-surface-300" aria-hidden="true">→</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-200 text-xs font-bold text-surface-500">3</span>
-            <span className="text-surface-400">Review</span>
-          </div>
-        </div>
-      </nav>
+      <div className="flex items-center justify-center gap-2 border-b border-surface-200 bg-white/60 px-6 py-3 text-sm text-surface-400 backdrop-blur dark:border-surface-700 dark:bg-surface-900/60" role="navigation" aria-label="Progress">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">1</span>
+        Select Mode
+        <span className="mx-2 text-surface-300" aria-hidden="true">→</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-200 text-xs font-bold text-surface-500">2</span>
+        <span className="text-surface-400">Upload</span>
+        <span className="mx-2 text-surface-300" aria-hidden="true">→</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-200 text-xs font-bold text-surface-500">3</span>
+        <span className="text-surface-400">Review</span>
+      </div>
 
-      <div className="pt-28 pb-20 px-6">
+      <div className="py-12 px-6">
         <div className="mx-auto max-w-4xl">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
             <h1 className="font-display text-4xl sm:text-5xl font-bold text-surface-900">Choose Your Review Mode</h1>

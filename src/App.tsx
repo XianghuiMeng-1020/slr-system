@@ -1,8 +1,10 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
 import ProtectedRoute from './components/ProtectedRoute'
+import AppHeader from './components/AppHeader'
 import ToastContainer from './components/Toast'
+import { useAuthStore } from './store/useAuthStore'
 import { useI18n } from './i18n'
 
 const WelcomePage = lazy(() => import('./pages/WelcomePage'))
@@ -30,91 +32,109 @@ function LoadingFallback() {
   )
 }
 
+const HIDE_HEADER_PATHS = ['/', '/login']
+
+function AppLayout() {
+  const location = useLocation()
+  const hydrate = useAuthStore((s) => s.hydrate)
+
+  useEffect(() => { hydrate() }, [hydrate])
+
+  const showHeader = !HIDE_HEADER_PATHS.includes(location.pathname)
+
+  return (
+    <>
+      {showHeader && <AppHeader />}
+      <Suspense fallback={<LoadingFallback />}>
+        <Routes>
+          <Route path="/" element={<WelcomePage />} />
+          <Route path="/mode" element={<ModeSelectionPage />} />
+          <Route
+            path="/upload"
+            element={
+              <ProtectedRoute requireMode>
+                <UploadPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/theme-verification"
+            element={
+              <ProtectedRoute requireMode requireDocuments>
+                <ThemeVerificationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/evidence-verification"
+            element={
+              <ProtectedRoute requireMode requireDocuments>
+                <EvidenceVerificationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute requireMode>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/prisma"
+            element={
+              <ProtectedRoute requireMode>
+                <PrismaPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute requireMode>
+                <AnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shortcuts"
+            element={
+              <ProtectedRoute requireMode>
+                <ShortcutSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute requireMode>
+                <ProjectSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/conflicts"
+            element={
+              <ProtectedRoute requireMode>
+                <ConflictsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+      <ToastContainer />
+    </>
+  )
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <Suspense fallback={<LoadingFallback />}>
-          <Routes>
-            <Route path="/" element={<WelcomePage />} />
-            <Route path="/mode" element={<ModeSelectionPage />} />
-            <Route
-              path="/upload"
-              element={
-                <ProtectedRoute requireMode>
-                  <UploadPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/theme-verification"
-              element={
-                <ProtectedRoute requireMode requireDocuments>
-                  <ThemeVerificationPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/evidence-verification"
-              element={
-                <ProtectedRoute requireMode requireDocuments>
-                  <EvidenceVerificationPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute requireMode>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/prisma"
-              element={
-                <ProtectedRoute requireMode>
-                  <PrismaPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/analytics"
-              element={
-                <ProtectedRoute requireMode>
-                  <AnalyticsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/shortcuts"
-              element={
-                <ProtectedRoute requireMode>
-                  <ShortcutSettingsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute requireMode>
-                  <ProjectSettingsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/conflicts"
-              element={
-                <ProtectedRoute requireMode>
-                  <ConflictsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-        <ToastContainer />
+        <AppLayout />
       </BrowserRouter>
     </ErrorBoundary>
   )
