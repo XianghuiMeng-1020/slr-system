@@ -980,7 +980,10 @@ def export_notion_page(
         f"Evidence rows (approx): {ev_n}",
     ]
     title = req.title or f"SLR snapshot {project_id[:8]}"
-    page = notion_export.create_page_with_blocks(secret, parent, title, lines)
+    try:
+        page = notion_export.create_page_with_blocks(secret, parent, title, lines)
+    except Exception as exc:
+        raise HTTPException(400, f"Notion API error: {exc}") from exc
     return _ok({"page": page, "notion_page_id": page.get("id")})
 
 
