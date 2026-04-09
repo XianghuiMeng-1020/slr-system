@@ -13,8 +13,6 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         connect_args={"check_same_thread": False, "timeout": 30},
-        pool_size=1,
-        max_overflow=0,
     )
 
     @event.listens_for(engine, "connect")
