@@ -16,14 +16,17 @@ import {
   ClipboardPaste,
 } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
+import { useI18n } from '../i18n'
 
 export default function UploadPage() {
   const navigate = useNavigate()
+  const { lang, setLang, t } = useI18n()
   const mode = useAppStore((s) => s.mode)
   const documents = useAppStore((s) => s.documents)
   const codingScheme = useAppStore((s) => s.codingScheme)
   const codingSchemeFileName = useAppStore((s) => s.codingSchemeFileName)
   const isProcessing = useAppStore((s) => s.isProcessing)
+  const processProgress = useAppStore((s) => s.processProgress)
   const isUploading = useAppStore((s) => s.isUploading)
   const uploadDocuments = useAppStore((s) => s.uploadDocuments)
   const removeDocument = useAppStore((s) => s.removeDocument)
@@ -32,6 +35,7 @@ export default function UploadPage() {
   const processDocuments = useAppStore((s) => s.processDocuments)
   const addToast = useAppStore((s) => s.addToast)
   const ensureValidProject = useAppStore((s) => s.ensureValidProject)
+  const hydrateProjectData = useAppStore((s) => s.hydrateProjectData)
 
   const [dragActive, setDragActive] = useState(false)
   const [schemeDragActive, setSchemeDragActive] = useState(false)
@@ -42,13 +46,14 @@ export default function UploadPage() {
 
   useEffect(() => {
     let cancelled = false
-    ensureValidProject().then((ok) => {
+    ensureValidProject().then(async (ok) => {
       if (cancelled) return
       setValidating(false)
       if (!ok) navigate('/mode')
+      if (ok) await hydrateProjectData()
     })
     return () => { cancelled = true }
-  }, [ensureValidProject, navigate])
+  }, [ensureValidProject, hydrateProjectData, navigate])
 
   const handleDocFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -144,6 +149,14 @@ export default function UploadPage() {
             </div>
           </button>
           <div className="flex items-center gap-2 text-sm text-surface-400" aria-label="Progress steps">
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as 'en' | 'zh')}
+              className="mr-2 rounded border border-surface-200 bg-white px-1.5 py-0.5 text-xs text-surface-600"
+            >
+              <option value="en">EN</option>
+              <option value="zh">中文</option>
+            </select>
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-600">
               <CheckCircle2 className="h-3.5 w-3.5" />
             </span>
@@ -165,7 +178,7 @@ export default function UploadPage() {
       <div className="pt-28 pb-20 px-6">
         <div className="mx-auto max-w-5xl">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
-            <h1 className="font-display text-4xl sm:text-5xl font-bold text-surface-900">Upload Documents</h1>
+            <h1 className="font-display text-4xl sm:text-5xl font-bold text-surface-900">{t('uploadDocuments')}</h1>
             <p className="mt-4 text-lg text-surface-500 max-w-xl mx-auto">
               Upload your PDF papers and coding scheme to begin the{' '}
               {mode === 'theme-verification' ? 'theme' : 'evidence'} verification process.
@@ -418,6 +431,20 @@ export default function UploadPage() {
           </div>
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="mt-12 text-center">
+            {isProcessing && processProgress && (
+              <div className="mx-auto mb-5 max-w-md rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-left">
+                <p className="text-sm font-medium text-primary-700">Processing progress</p>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-primary-100">
+                  <div
+                    className="h-full rounded-full bg-primary-500 transition-all"
+                    style={{ width: `${processProgress.total > 0 ? (processProgress.processed / processProgress.total) * 100 : 0}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-primary-700">
+                  {processProgress.processed}/{processProgress.total} processed, {processProgress.completed} completed, {processProgress.failed} failed
+                </p>
+              </div>
+            )}
             {!canProceed && (
               <p className="mb-4 text-sm text-surface-400">Upload at least one document and a coding scheme to continue.</p>
             )}
@@ -432,6 +459,9 @@ export default function UploadPage() {
                 <>Start {mode === 'theme-verification' ? 'Theme Verification' : 'Evidence Verification'} <ArrowRight className="h-5 w-5" /></>
               )}
             </button>
+            <div className="mt-3">
+              <button onClick={() => navigate('/dashboard')} className="btn-secondary text-sm px-5 py-2">{t('openDashboard')}</button>
+            </div>
           </motion.div>
         </div>
       </div>

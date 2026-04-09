@@ -8,3 +8,7 @@ openpyxl==3.1.5
 openai==2.30.0
 python-dotenv==1.2.2
 pydantic==2.12.5
+Pillow==11.2.1
+pytesseract==0.3.13
+json5==0.9.25
+pytest==8.4.1

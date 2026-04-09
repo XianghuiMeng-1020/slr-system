@@ -10,6 +10,11 @@ class ApiError extends Error {
   }
 }
 
+interface ApiEnvelope<T> {
+  data: T
+  message: string
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     ...init,
@@ -23,7 +28,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(res.status, body || res.statusText)
   }
   const ct = res.headers.get('content-type') || ''
-  if (ct.includes('application/json')) return res.json()
+  if (ct.includes('application/json')) {
+    const json = await res.json()
+    if (json && typeof json === 'object' && 'data' in json && 'message' in json) {
+      return (json as ApiEnvelope<T>).data
+    }
+    return json as T
+  }
   return res as unknown as T
 }
 
@@ -37,6 +48,7 @@ export interface DocumentResponse {
   filename: string
   page_count: number
   status: string
+  error_message?: string | null
 }
 
 export interface SchemeItemResponse {
@@ -69,8 +81,23 @@ export interface DocumentDetailResponse {
   filename: string
   page_count: number
   status: string
+  error_message?: string | null
   labels: LabelResponse[]
   evidences: EvidenceResponse[]
+}
+
+export interface ProcessTaskResponse {
+  task_id: string
+  total: number
+}
+
+export interface ProcessStatusResponse {
+  task_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  total: number
+  processed: number
+  completed: number
+  failed: number
 }
 
 export interface ProjectStatusResponse {
@@ -78,6 +105,13 @@ export interface ProjectStatusResponse {
   completed: number
   processing: number
   pending: number
+}
+
+interface PaginatedDocumentsResponse {
+  items: DocumentResponse[]
+  page: number
+  per_page: number
+  total_count: number
 }
 
 export const api = {
@@ -121,9 +155,13 @@ export const api = {
   },
 
   processProject(projectId: string) {
-    return request<{ message: string }>(`/projects/${projectId}/process`, {
+    return request<ProcessTaskResponse>(`/projects/${projectId}/process`, {
       method: 'POST',
     })
+  },
+
+  getProcessStatus(projectId: string, taskId: string) {
+    return request<ProcessStatusResponse>(`/projects/${projectId}/process/status?task_id=${encodeURIComponent(taskId)}`)
   },
 
   getProjectStatus(projectId: string) {
@@ -131,7 +169,8 @@ export const api = {
   },
 
   listDocuments(projectId: string) {
-    return request<DocumentResponse[]>(`/projects/${projectId}/documents`)
+    return request<PaginatedDocumentsResponse>(`/projects/${projectId}/documents?page=1&per_page=100`)
+      .then((res) => res.items)
   },
 
   getDocumentDetail(projectId: string, docId: string) {
@@ -178,8 +217,18 @@ export const api = {
     return `${BASE}/projects/${projectId}/export?format=${format}`
   },
 
+  exportProjectExtended(projectId: string, format: 'excel' | 'csv' | 'json' | 'bibtex' | 'ris' = 'excel') {
+    return `${BASE}/projects/${projectId}/export?format=${format}`
+  },
+
   deleteDocument(projectId: string, docId: string) {
     return request<{ message: string }>(`/projects/${projectId}/documents/${docId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  deleteProject(projectId: string) {
+    return request<{ message: string }>(`/projects/${projectId}`, {
       method: 'DELETE',
     })
   },

@@ -17,6 +17,11 @@ export interface EvidenceItem {
   page: number
   bboxJson?: { x: number; y: number; width: number; height: number } | null
   relevantCodes: string[]
+  extractedStats?: Array<{ type: string; value: string }>
+  aiReason?: string
+  exactQuote?: string
+  evidenceType?: string
+  confidence?: number | null
   userResponse?: 'yes' | 'no' | null
   userNote?: string
 }
@@ -27,6 +32,7 @@ export interface DocumentLabel {
   value: string
   confidence?: number | null
   userOverride?: string | null
+  supportingEvidenceIds?: string[]
 }
 
 export interface UploadedDocument {
@@ -46,6 +52,40 @@ export interface Toast {
   message: string
 }
 
+type ApiLikeError = { message?: string }
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as ApiLikeError).message || 'Unknown error')
+  }
+  return 'Unknown error'
+}
+
+type DetailLabelLike = {
+  id: string
+  scheme_item_id: string
+  value: string
+  confidence: number | null
+  user_override: string | null
+  supporting_evidence_ids?: string[]
+}
+
+type DetailEvidenceLike = {
+  id: string
+  text: string
+  page: number
+  bbox_json: { x: number; y: number; width: number; height: number } | null
+  relevant_code_ids: string[]
+  extracted_stats?: Array<{ type: string; value: string }>
+  ai_reason?: string | null
+  exact_quote?: string | null
+  evidence_type?: string | null
+  confidence?: number | null
+  user_response: string | null
+  user_note: string | null
+}
+
 interface AppState {
   mode: Mode | null
   projectId: string | null
@@ -55,11 +95,14 @@ interface AppState {
   currentDocumentIndex: number
   isProcessing: boolean
   isUploading: boolean
+  processTaskId: string | null
+  processProgress: { total: number; processed: number; completed: number; failed: number } | null
   toasts: Toast[]
 
   setMode: (mode: Mode) => void
   createProject: (mode: Mode) => Promise<string>
   ensureValidProject: () => Promise<boolean>
+  hydrateProjectData: () => Promise<void>
   uploadDocuments: (files: File[]) => Promise<void>
   uploadCodingScheme: (file: File) => Promise<void>
   submitCodingSchemeText: (text: string) => Promise<void>
@@ -87,6 +130,8 @@ export const useAppStore = create<AppState>()(
       currentDocumentIndex: 0,
       isProcessing: false,
       isUploading: false,
+      processTaskId: null,
+      processProgress: null,
       toasts: [],
 
       setMode: (mode) => set({ mode }),
@@ -120,8 +165,9 @@ export const useAppStore = create<AppState>()(
             currentDocumentIndex: 0,
           })
           return res.id
-        } catch (e: any) {
-          get().addToast('error', `Failed to create project: ${e.message}`)
+        } catch (e: unknown) {
+          const msg = getErrorMessage(e)
+          get().addToast('error', `Failed to create project: ${msg}`)
           throw e
         }
       },
@@ -133,11 +179,38 @@ export const useAppStore = create<AppState>()(
         if (valid) return true
         try {
           const res = await api.createProject(mode)
-          set({ projectId: res.id, documents: [], codingScheme: [], codingSchemeFileName: null })
+          set({ projectId: res.id, documents: [], codingScheme: [], codingSchemeFileName: null, processTaskId: null, processProgress: null })
           return true
-        } catch (e: any) {
-          get().addToast('error', `Failed to recreate project: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Failed to recreate project: ${getErrorMessage(e)}`)
           return false
+        }
+      },
+
+      hydrateProjectData: async () => {
+        const { projectId } = get()
+        if (!projectId) return
+        try {
+          const [docs, scheme] = await Promise.all([api.listDocuments(projectId), api.getCodingScheme(projectId)])
+          set((s) => ({
+            ...s,
+            documents: docs.map((d) => ({
+              id: d.id,
+              name: d.filename,
+              pageCount: d.page_count,
+              labels: s.documents.find((x) => x.id === d.id)?.labels || [],
+              evidences: s.documents.find((x) => x.id === d.id)?.evidences || [],
+              status: d.status as UploadedDocument['status'],
+            })),
+            codingScheme: scheme.map((i) => ({
+              id: i.id,
+              code: i.code,
+              description: i.description,
+              category: i.category,
+            })),
+          }))
+        } catch (e: unknown) {
+          get().addToast('error', `Failed to restore project data: ${getErrorMessage(e)}`)
         }
       },
 
@@ -157,8 +230,8 @@ export const useAppStore = create<AppState>()(
           }))
           set((s) => ({ documents: [...s.documents, ...newDocs].slice(0, 50) }))
           get().addToast('success', `${docs.length} document(s) uploaded successfully`)
-        } catch (e: any) {
-          get().addToast('error', `Upload failed: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Upload failed: ${getErrorMessage(e)}`)
         } finally {
           set({ isUploading: false })
         }
@@ -179,8 +252,8 @@ export const useAppStore = create<AppState>()(
             codingSchemeFileName: file.name,
           })
           get().addToast('success', `Coding scheme loaded: ${items.length} items`)
-        } catch (e: any) {
-          get().addToast('error', `Scheme upload failed: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Scheme upload failed: ${getErrorMessage(e)}`)
         }
       },
 
@@ -199,8 +272,8 @@ export const useAppStore = create<AppState>()(
             codingSchemeFileName: 'Pasted text',
           })
           get().addToast('success', `Coding scheme loaded: ${items.length} items`)
-        } catch (e: any) {
-          get().addToast('error', `Scheme parsing failed: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Scheme parsing failed: ${getErrorMessage(e)}`)
         }
       },
 
@@ -210,29 +283,42 @@ export const useAppStore = create<AppState>()(
         try {
           await api.deleteDocument(projectId, id)
           set((s) => ({ documents: s.documents.filter((d) => d.id !== id) }))
-        } catch (e: any) {
-          get().addToast('error', `Delete failed: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Delete failed: ${getErrorMessage(e)}`)
         }
       },
 
       processDocuments: async () => {
         const { projectId } = get()
         if (!projectId) return
-        set({ isProcessing: true })
+        set({ isProcessing: true, processProgress: null })
         try {
-          await api.processProject(projectId)
+          const started = await api.processProject(projectId)
+          set({ processTaskId: started.task_id, processProgress: { total: started.total, processed: 0, completed: 0, failed: 0 } })
+          let loops = 0
+          while (loops < 180) {
+            const status = await api.getProcessStatus(projectId, started.task_id)
+            set({ processProgress: { total: status.total, processed: status.processed, completed: status.completed, failed: status.failed } })
+            if (status.status === 'completed' || status.status === 'failed') break
+            await new Promise((r) => setTimeout(r, 1200))
+            loops += 1
+          }
           const docs = await api.listDocuments(projectId)
-          set((s) => ({
-            documents: s.documents.map((d) => {
-              const updated = docs.find((dd) => dd.id === d.id)
-              return updated ? { ...d, status: updated.status as UploadedDocument['status'], pageCount: updated.page_count } : d
-            }),
-          }))
+          set({
+            documents: docs.map((d) => ({
+              id: d.id,
+              name: d.filename,
+              pageCount: d.page_count,
+              labels: get().documents.find((x) => x.id === d.id)?.labels || [],
+              evidences: get().documents.find((x) => x.id === d.id)?.evidences || [],
+              status: d.status as UploadedDocument['status'],
+            })),
+          })
           get().addToast('success', 'AI processing complete')
-        } catch (e: any) {
-          get().addToast('error', `Processing failed: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Processing failed: ${getErrorMessage(e)}`)
         } finally {
-          set({ isProcessing: false })
+          set({ isProcessing: false, processTaskId: null })
         }
       },
 
@@ -248,19 +334,25 @@ export const useAppStore = create<AppState>()(
                     ...d,
                     pageCount: detail.page_count,
                     status: detail.status as UploadedDocument['status'],
-                    labels: detail.labels.map((l) => ({
+                    labels: detail.labels.map((l: DetailLabelLike) => ({
                       id: l.id,
                       schemeItemId: l.scheme_item_id,
                       value: l.user_override || l.value,
                       confidence: l.confidence,
                       userOverride: l.user_override,
+                      supportingEvidenceIds: l.supporting_evidence_ids || [],
                     })),
-                    evidences: detail.evidences.map((e) => ({
+                    evidences: detail.evidences.map((e: DetailEvidenceLike) => ({
                       id: e.id,
                       text: e.text,
                       page: e.page,
                       bboxJson: e.bbox_json,
                       relevantCodes: e.relevant_code_ids,
+                      extractedStats: e.extracted_stats || [],
+                      aiReason: e.ai_reason || '',
+                      exactQuote: e.exact_quote || '',
+                      evidenceType: e.evidence_type || '',
+                      confidence: e.confidence ?? null,
                       userResponse: (e.user_response as EvidenceItem['userResponse']) ?? null,
                       userNote: e.user_note ?? '',
                     })),
@@ -268,8 +360,8 @@ export const useAppStore = create<AppState>()(
                 : d,
             ),
           }))
-        } catch (e: any) {
-          get().addToast('error', `Failed to load document: ${e.message}`)
+        } catch (e: unknown) {
+          get().addToast('error', `Failed to load document: ${getErrorMessage(e)}`)
         }
       },
 
@@ -278,6 +370,7 @@ export const useAppStore = create<AppState>()(
       updateLabel: async (docId, schemeItemId, value) => {
         const { projectId } = get()
         if (!projectId) return
+        const prevDocs = get().documents
         set((s) => ({
           documents: s.documents.map((d) =>
             d.id === docId
@@ -287,14 +380,16 @@ export const useAppStore = create<AppState>()(
         }))
         try {
           await api.updateLabels(projectId, docId, [{ scheme_item_id: schemeItemId, value }])
-        } catch (e: any) {
-          get().addToast('error', `Save label failed: ${e.message}`)
+        } catch (e: unknown) {
+          set({ documents: prevDocs })
+          get().addToast('error', `Save label failed: ${getErrorMessage(e)}`)
         }
       },
 
       updateEvidence: async (docId, evidenceId, data) => {
         const { projectId } = get()
         if (!projectId) return
+        const prevDocs = get().documents
         set((s) => ({
           documents: s.documents.map((d) =>
             d.id === docId
@@ -318,8 +413,9 @@ export const useAppStore = create<AppState>()(
             user_response: data.userResponse,
             user_note: data.userNote,
           })
-        } catch (e: any) {
-          get().addToast('error', `Save failed: ${e.message}`)
+        } catch (e: unknown) {
+          set({ documents: prevDocs })
+          get().addToast('error', `Save failed: ${getErrorMessage(e)}`)
         }
       },
 
@@ -341,6 +437,8 @@ export const useAppStore = create<AppState>()(
           currentDocumentIndex: 0,
           isProcessing: false,
           isUploading: false,
+          processTaskId: null,
+          processProgress: null,
           toasts: [],
         }),
     }),

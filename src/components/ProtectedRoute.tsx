@@ -10,13 +10,13 @@ interface Props {
 export default function ProtectedRoute({ children, requireMode = false, requireDocuments = false }: Props) {
   const mode = useAppStore((s) => s.mode)
   const projectId = useAppStore((s) => s.projectId)
-  const documents = useAppStore((s) => s.documents)
 
   if (requireMode && (!mode || !projectId)) {
     return <Navigate to="/mode" replace />
   }
 
-  if (requireDocuments && documents.length === 0) {
+  // Allow entry when document cache is empty; pages can hydrate from API on mount.
+  if (requireDocuments && !projectId) {
     return <Navigate to="/upload" replace />
   }
 

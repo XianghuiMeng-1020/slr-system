@@ -13,7 +13,7 @@ import {
   FileText,
   Loader2,
 } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
+import { useAppStore, type DocumentLabel } from '../store/useAppStore'
 import { api } from '../services/api'
 import PDFViewer from '../components/PDFViewer'
 
@@ -31,12 +31,16 @@ const LabelCard = memo(function LabelCard({
   isEditing,
   onEdit,
   onChange,
+  supportingCount,
+  onOpenEvidence,
 }: {
   schemeItem: { id: string; code: string; description: string }
-  label: { value: string; confidence?: number | null } | undefined
+  label: { value: string; confidence?: number | null; supportingEvidenceIds?: string[] } | undefined
   isEditing: boolean
   onEdit: () => void
   onChange: (value: LabelValue) => void
+  supportingCount: number
+  onOpenEvidence: () => void
 }) {
   const value = (label?.value || 'Unclear') as LabelValue
   const config = labelConfig[value]
@@ -69,6 +73,14 @@ const LabelCard = memo(function LabelCard({
               </div>
               <span className="text-[10px] text-surface-400 tabular-nums">{Math.round(label.confidence * 100)}%</span>
             </div>
+          )}
+          {supportingCount > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenEvidence() }}
+              className="mt-2 rounded border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700"
+            >
+              {supportingCount} supporting evidence
+            </button>
           )}
         </div>
 
@@ -115,16 +127,24 @@ export default function ThemeVerificationPage() {
   const loadDocumentDetail = useAppStore((s) => s.loadDocumentDetail)
   const projectId = useAppStore((s) => s.projectId)
   const addToast = useAppStore((s) => s.addToast)
+  const hydrateProjectData = useAppStore((s) => s.hydrateProjectData)
 
   const [editingLabel, setEditingLabel] = useState<string | null>(null)
+  const [exportFormat, setExportFormat] = useState<'excel' | 'csv' | 'json' | 'bibtex' | 'ris'>('excel')
 
   const currentDoc = documents[currentDocumentIndex]
+
+  useEffect(() => {
+    if (documents.length === 0) {
+      hydrateProjectData()
+    }
+  }, [documents.length, hydrateProjectData])
 
   useEffect(() => {
     if (currentDoc && currentDoc.labels.length === 0 && currentDoc.status === 'completed') {
       loadDocumentDetail(currentDoc.id)
     }
-  }, [currentDoc?.id, currentDoc?.labels.length, currentDoc?.status, loadDocumentDetail])
+  }, [currentDoc, loadDocumentDetail])
 
   const handleLabelChange = useCallback(
     (codeId: string, value: LabelValue) => {
@@ -141,7 +161,7 @@ export default function ThemeVerificationPage() {
   }
 
   const handleExport = () => {
-    if (projectId) window.open(api.exportProject(projectId, 'excel'), '_blank')
+    if (projectId) window.open(api.exportProjectExtended(projectId, exportFormat), '_blank')
   }
 
   if (!currentDoc) {
@@ -205,6 +225,18 @@ export default function ThemeVerificationPage() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}
+            className="rounded border border-surface-200 bg-white px-2 py-1 text-[11px] text-surface-600"
+            aria-label="Export format"
+          >
+            <option value="excel">Excel</option>
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+            <option value="bibtex">BibTeX</option>
+            <option value="ris">RIS</option>
+          </select>
           <button onClick={() => addToast('success', 'All changes saved automatically')} className="btn-secondary text-xs py-1.5 px-3">
             <Save className="h-3.5 w-3.5" /> Save
           </button>
@@ -260,10 +292,12 @@ export default function ThemeVerificationPage() {
                       <LabelCard
                         key={schemeItem.id}
                         schemeItem={schemeItem}
-                        label={currentDoc.labels.find((l) => l.schemeItemId === schemeItem.id)}
+                        label={currentDoc.labels.find((l: DocumentLabel) => l.schemeItemId === schemeItem.id)}
                         isEditing={editingLabel === schemeItem.id}
                         onEdit={() => setEditingLabel(editingLabel === schemeItem.id ? null : schemeItem.id)}
                         onChange={(v) => handleLabelChange(schemeItem.id, v)}
+                        supportingCount={(currentDoc.labels.find((l: DocumentLabel) => l.schemeItemId === schemeItem.id)?.supportingEvidenceIds || []).length}
+                        onOpenEvidence={() => navigate('/evidence-verification')}
                       />
                     ))}
                   </div>

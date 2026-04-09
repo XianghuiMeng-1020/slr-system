@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, AlertTriangle, Search, WrapText } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -12,23 +12,31 @@ interface PDFViewerProps {
   fileName: string
   highlightPage?: number
   highlightBbox?: { x: number; y: number; width: number; height: number } | null
+  highlights?: Array<{ page: number; bbox: { x: number; y: number; width: number; height: number } | null; color?: string }>
 }
 
-function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFViewerProps) {
+function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highlights = [] }: PDFViewerProps) {
   const [pageCount, setPageCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [zoom, setZoom] = useState(1.2)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMatches, setSearchMatches] = useState<number[]>([])
+  const [searchIdx, setSearchIdx] = useState(0)
+  const [continuousMode, setContinuousMode] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const highlightCanvasRef = useRef<HTMLCanvasElement>(null)
   const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null)
+  const displayedPage = highlightPage && highlightPage >= 1 && highlightPage <= pageCount ? highlightPage : currentPage
 
   useEffect(() => {
     if (!pdfUrl) return
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
     setError(null)
     pdfjsLib.getDocument({ url: pdfUrl, withCredentials: false }).promise.then((doc) => {
@@ -46,15 +54,20 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
   }, [pdfUrl])
 
   useEffect(() => {
-    if (highlightPage && highlightPage >= 1 && highlightPage <= pageCount) {
-      setCurrentPage(highlightPage)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
     }
-  }, [highlightPage, pageCount])
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const renderPage = useCallback(async () => {
     const doc = pdfDocRef.current
     const canvas = canvasRef.current
-    if (!doc || !canvas || currentPage < 1 || currentPage > doc.numPages) return
+    if (!doc || !canvas || displayedPage < 1 || displayedPage > doc.numPages) return
 
     if (renderTaskRef.current) {
       renderTaskRef.current.cancel()
@@ -62,7 +75,7 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
     }
 
     try {
-      const page = await doc.getPage(currentPage)
+      const page = await doc.getPage(displayedPage)
       const viewport = page.getViewport({ scale: zoom })
 
       const dpr = window.devicePixelRatio || 1
@@ -74,7 +87,8 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
       const ctx = canvas.getContext('2d')!
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      const task = page.render({ canvasContext: ctx, viewport, canvas } as any)
+      const renderContext = { canvasContext: ctx, viewport } as Parameters<typeof page.render>[0]
+      const task = page.render(renderContext)
       renderTaskRef.current = task
       await task.promise
       renderTaskRef.current = null
@@ -89,20 +103,33 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
         hlCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
         hlCtx.clearRect(0, 0, viewport.width, viewport.height)
 
-        if (highlightBbox && highlightPage === currentPage) {
+        if (highlightBbox && highlightPage === displayedPage) {
           hlCtx.fillStyle = 'rgba(250, 204, 21, 0.3)'
           hlCtx.strokeStyle = 'rgba(234, 179, 8, 0.8)'
           hlCtx.lineWidth = 2
           hlCtx.fillRect(highlightBbox.x * zoom, highlightBbox.y * zoom, highlightBbox.width * zoom, highlightBbox.height * zoom)
           hlCtx.strokeRect(highlightBbox.x * zoom, highlightBbox.y * zoom, highlightBbox.width * zoom, highlightBbox.height * zoom)
         }
+
+        highlights
+          .filter((h) => h.page === displayedPage && h.bbox)
+          .forEach((h, idx) => {
+            const b = h.bbox!
+            const color = h.color || `hsla(${(idx * 47) % 360}, 85%, 55%, 0.18)`
+            hlCtx.fillStyle = color
+            hlCtx.strokeStyle = color.replace('0.18', '0.75')
+            hlCtx.lineWidth = 1.5
+            hlCtx.fillRect(b.x * zoom, b.y * zoom, b.width * zoom, b.height * zoom)
+            hlCtx.strokeRect(b.x * zoom, b.y * zoom, b.width * zoom, b.height * zoom)
+          })
       }
-    } catch (err: any) {
-      if (err?.name !== 'RenderingCancelledException') {
+    } catch (err: unknown) {
+      const name = typeof err === 'object' && err && 'name' in err ? String((err as { name?: string }).name) : ''
+      if (name !== 'RenderingCancelledException') {
         console.error('PDF render error:', err)
       }
     }
-  }, [currentPage, zoom, highlightBbox, highlightPage])
+  }, [displayedPage, zoom, highlightBbox, highlights, highlightPage])
 
   useEffect(() => {
     renderPage()
@@ -119,6 +146,34 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
     }
   }
 
+  const runSearch = useCallback(async () => {
+    const q = searchQuery.trim().toLowerCase()
+    const doc = pdfDocRef.current
+    if (!q || !doc) {
+      setSearchMatches([])
+      setSearchIdx(0)
+      return
+    }
+    const matches: number[] = []
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p)
+      const tc = await page.getTextContent()
+      const items = tc.items as Array<{ str?: string }>
+      const txt = items.map((it) => String(it?.str || '')).join(' ').toLowerCase()
+      if (txt.includes(q)) matches.push(p)
+    }
+    setSearchMatches(matches)
+    if (matches.length > 0) {
+      setSearchIdx(0)
+      setCurrentPage(matches[0])
+    }
+  }, [searchQuery])
+
+  useEffect(() => {
+    const t = setTimeout(() => { runSearch() }, 280)
+    return () => clearTimeout(t)
+  }, [runSearch])
+
   if (!pdfUrl) {
     return (
       <div className="flex h-full items-center justify-center rounded-xl border border-surface-200 bg-surface-50">
@@ -133,6 +188,20 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
         <span className="text-xs font-medium text-surface-500 truncate max-w-[180px]" title={fileName}>
           {fileName}
         </span>
+        <div className="mx-3 flex min-w-[180px] flex-1 items-center gap-1 rounded-md border border-surface-200 bg-white px-2 py-1">
+          <Search className="h-3.5 w-3.5 text-surface-400" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-transparent text-xs text-surface-700 outline-none"
+            placeholder="Search in PDF (Ctrl+F)"
+            aria-label="Search text in PDF"
+          />
+          {searchMatches.length > 0 && (
+            <span className="text-[10px] text-surface-500">{searchIdx + 1}/{searchMatches.length}</span>
+          )}
+        </div>
         <div className="flex items-center gap-0.5">
           <button onClick={() => setZoom(Math.max(0.5, zoom - 0.2))} className="rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Zoom out">
             <ZoomOut className="h-3.5 w-3.5" />
@@ -145,17 +214,59 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
           <button onClick={handleFullscreen} className="rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Fullscreen">
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
+          <button
+            onClick={() => setContinuousMode((v) => !v)}
+            className={`rounded p-1 ${continuousMode ? 'text-primary-600 bg-primary-100' : 'text-surface-400 hover:text-surface-600 hover:bg-surface-100'}`}
+            aria-label="Toggle continuous mode"
+            title="Toggle continuous mode"
+          >
+            <WrapText className="h-3.5 w-3.5" />
+          </button>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="rounded p-1 text-surface-400 hover:text-surface-600 disabled:opacity-30" aria-label="Previous page">
+          <button
+            onClick={() => goToPage(displayedPage - 1)}
+            disabled={displayedPage <= 1}
+            className="rounded p-1 text-surface-400 hover:text-surface-600 disabled:opacity-30"
+            aria-label="Previous page"
+          >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
           <span className="text-xs text-surface-500 tabular-nums">
-            <span className="font-medium text-surface-700">{currentPage}</span> / {pageCount}
+            <span className="font-medium text-surface-700">{displayedPage}</span> / {pageCount}
           </span>
-          <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount} className="rounded p-1 text-surface-400 hover:text-surface-600 disabled:opacity-30" aria-label="Next page">
+          <button
+            onClick={() => goToPage(displayedPage + 1)}
+            disabled={displayedPage >= pageCount}
+            className="rounded p-1 text-surface-400 hover:text-surface-600 disabled:opacity-30"
+            aria-label="Next page"
+          >
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
+          {searchMatches.length > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  const next = Math.max(0, searchIdx - 1)
+                  setSearchIdx(next)
+                  setCurrentPage(searchMatches[next])
+                }}
+                className="ml-1 rounded border border-surface-200 px-1 py-0.5 text-[10px] text-surface-500"
+              >
+                Prev Hit
+              </button>
+              <button
+                onClick={() => {
+                  const next = Math.min(searchMatches.length - 1, searchIdx + 1)
+                  setSearchIdx(next)
+                  setCurrentPage(searchMatches[next])
+                }}
+                className="rounded border border-surface-200 px-1 py-0.5 text-[10px] text-surface-500"
+              >
+                Next Hit
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -183,6 +294,26 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox }: PDFV
         ) : loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-primary-200 border-t-primary-600" />
+          </div>
+        ) : continuousMode ? (
+          <div className="w-full max-w-[1100px] space-y-3">
+            {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNo) => (
+              <button
+                key={pageNo}
+                className={`w-full rounded border ${pageNo === currentPage ? 'border-primary-300 ring-1 ring-primary-200' : 'border-surface-200'} bg-white p-2 text-left`}
+                onClick={() => setCurrentPage(pageNo)}
+              >
+                <span className="mb-1 block text-[10px] text-surface-400">Page {pageNo}</span>
+                {pageNo === currentPage ? (
+                  <div className="relative inline-block">
+                    <canvas ref={canvasRef} className="shadow-lg rounded" />
+                    <canvas ref={highlightCanvasRef} className="absolute top-0 left-0 pointer-events-none" />
+                  </div>
+                ) : (
+                  <div className="h-24 rounded bg-surface-50 text-xs text-surface-400 flex items-center justify-center">Click to preview page</div>
+                )}
+              </button>
+            ))}
           </div>
         ) : (
           <div className="relative inline-block">

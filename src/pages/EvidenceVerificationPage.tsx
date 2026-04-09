@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -19,6 +19,7 @@ import {
   XCircle,
   Filter,
   Loader2,
+  Keyboard,
 } from 'lucide-react'
 import { useAppStore, type EvidenceItem } from '../store/useAppStore'
 import { api } from '../services/api'
@@ -30,25 +31,27 @@ const EvidenceCard = memo(function EvidenceCard({
   isSelected,
   codeName,
   noteExpanded,
+  selectedForBatch,
   onClick,
   onResponse,
   onToggleNote,
   onNoteChange,
+  onToggleSelect,
 }: {
   evidence: EvidenceItem
   index: number
   isSelected: boolean
   codeName: string | null
   noteExpanded: boolean
+  selectedForBatch: boolean
   onClick: () => void
   onResponse: (r: 'yes' | 'no') => void
   onToggleNote: () => void
   onNoteChange: (note: string) => void
+  onToggleSelect: () => void
 }) {
   const [localNote, setLocalNote] = useState(evidence.userNote || '')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
-
-  useEffect(() => { setLocalNote(evidence.userNote || '') }, [evidence.userNote])
 
   const handleLocalNoteChange = useCallback((value: string) => {
     setLocalNote(value)
@@ -75,6 +78,13 @@ const EvidenceCard = memo(function EvidenceCard({
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selectedForBatch}
+            onChange={(e) => { e.stopPropagation(); onToggleSelect() }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Select evidence for batch review"
+          />
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-100 text-xs font-bold text-accent-700">
             {index + 1}
           </span>
@@ -90,6 +100,12 @@ const EvidenceCard = memo(function EvidenceCard({
       </div>
 
       <p className="text-sm text-surface-700 leading-relaxed mb-3 line-clamp-3">"{evidence.text}"</p>
+      <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-surface-500">
+        <span>{evidence.evidenceType || 'contextual'}{evidence.confidence != null ? ` · ${Math.round(evidence.confidence * 100)}%` : ''}</span>
+        {evidence.extractedStats && evidence.extractedStats.length > 0 && (
+          <span className="rounded bg-surface-100 px-1.5 py-0.5">{evidence.extractedStats.length} stats</span>
+        )}
+      </div>
 
       <div className="flex items-center gap-2">
         <span className="text-xs text-surface-400 mr-1">Does this evidence support your coding decision?</span>
@@ -149,6 +165,11 @@ const EvidenceCard = memo(function EvidenceCard({
                 rows={3}
                 aria-label="Evidence note"
               />
+              {evidence.aiReason && (
+                <div className="mt-2 rounded-lg bg-blue-50 px-2 py-1.5 text-xs text-blue-700">
+                  <span className="font-medium">Why selected: </span>{evidence.aiReason}
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -167,26 +188,78 @@ export default function EvidenceVerificationPage() {
   const loadDocumentDetail = useAppStore((s) => s.loadDocumentDetail)
   const projectId = useAppStore((s) => s.projectId)
   const addToast = useAppStore((s) => s.addToast)
+  const hydrateProjectData = useAppStore((s) => s.hydrateProjectData)
 
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null)
   const [noteExpanded, setNoteExpanded] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'reviewed'>('all')
+  const [query, setQuery] = useState('')
+  const [codeFilter, setCodeFilter] = useState<string>('all')
+  const [pageRange, setPageRange] = useState('')
+  const [minConfidence, setMinConfidence] = useState(0)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [visibleCount, setVisibleCount] = useState(80)
+  const [leftWidth, setLeftWidth] = useState<number>(() => Number(localStorage.getItem('evidence-left-width') || '50'))
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [exportFormat, setExportFormat] = useState<'excel' | 'csv' | 'json' | 'bibtex' | 'ris'>('excel')
+  const resizingRef = useRef(false)
 
   const currentDoc = documents[currentDocumentIndex]
+
+  const filteredEvidences = useMemo(() => (currentDoc?.evidences || []).filter((e) => {
+    if (filterStatus === 'pending' && e.userResponse) return false
+    if (filterStatus === 'reviewed' && !e.userResponse) return false
+    if (query && !(`${e.text} ${e.aiReason || ''} ${e.exactQuote || ''}`.toLowerCase().includes(query.toLowerCase()))) return false
+    if (codeFilter !== 'all' && !e.relevantCodes.includes(codeFilter)) return false
+    if (minConfidence > 0 && (e.confidence || 0) < minConfidence) return false
+    if (pageRange.trim()) {
+      const m = pageRange.match(/^(\d+)(?:-(\d+))?$/)
+      if (m) {
+        const start = Number(m[1])
+        const end = Number(m[2] || m[1])
+        if (!(e.page >= start && e.page <= end)) return false
+      }
+    }
+    return true
+  }), [currentDoc, filterStatus, query, codeFilter, minConfidence, pageRange])
+
+  useEffect(() => {
+    if (documents.length === 0) {
+      hydrateProjectData()
+    }
+  }, [documents.length, hydrateProjectData])
 
   useEffect(() => {
     if (currentDoc && currentDoc.evidences.length === 0 && currentDoc.status === 'completed') {
       loadDocumentDetail(currentDoc.id)
     }
-  }, [currentDoc?.id, currentDoc?.evidences.length, currentDoc?.status, loadDocumentDetail])
+  }, [currentDoc, loadDocumentDetail])
 
-  const goToDoc = (delta: number) => {
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return
+      const pct = Math.min(75, Math.max(30, (e.clientX / window.innerWidth) * 100))
+      setLeftWidth(pct)
+      localStorage.setItem('evidence-left-width', String(pct))
+    }
+    const onUp = () => { resizingRef.current = false }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const goToDoc = useCallback((delta: number) => {
     const next = currentDocumentIndex + delta
     if (next >= 0 && next < documents.length) {
       setCurrentDocumentIndex(next)
       setSelectedEvidence(null)
+      setVisibleCount(80)
+      setSelectedIds(new Set())
     }
-  }
+  }, [currentDocumentIndex, documents.length, setCurrentDocumentIndex])
 
   const handleResponse = useCallback((evidenceId: string, response: 'yes' | 'no') => {
     if (!currentDoc) return
@@ -198,9 +271,53 @@ export default function EvidenceVerificationPage() {
     updateEvidence(currentDoc.id, evidenceId, { userNote: note })
   }, [currentDoc, updateEvidence])
 
-  const handleExport = () => {
-    if (projectId) window.open(api.exportProject(projectId, 'excel'), '_blank')
-  }
+  const handleExport = useCallback(() => {
+    if (projectId) window.open(api.exportProjectExtended(projectId, exportFormat), '_blank')
+  }, [projectId, exportFormat])
+
+  const markBatch = useCallback((value: 'yes' | 'no') => {
+    if (!currentDoc || selectedIds.size === 0) return
+    selectedIds.forEach((id) => updateEvidence(currentDoc.id, id, { userResponse: value }))
+  }, [currentDoc, selectedIds, updateEvidence])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!currentDoc) return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        handleExport()
+      } else if (e.key.toLowerCase() === 'j') {
+        e.preventDefault()
+        const list = filteredEvidences
+        if (!list.length) return
+        const idx = Math.max(0, list.findIndex((x) => x.id === selectedEvidence?.id))
+        setSelectedEvidence(list[Math.min(list.length - 1, idx + 1)])
+      } else if (e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        const list = filteredEvidences
+        if (!list.length) return
+        const idx = Math.max(0, list.findIndex((x) => x.id === selectedEvidence?.id))
+        setSelectedEvidence(list[Math.max(0, idx - 1)])
+      } else if (e.key.toLowerCase() === 'y' && selectedEvidence) {
+        e.preventDefault()
+        updateEvidence(currentDoc.id, selectedEvidence.id, { userResponse: 'yes' })
+      } else if (e.key.toLowerCase() === 'n' && selectedEvidence) {
+        e.preventDefault()
+        updateEvidence(currentDoc.id, selectedEvidence.id, { userResponse: 'no' })
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        goToDoc(1)
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goToDoc(-1)
+      } else if (e.key === '?') {
+        e.preventDefault()
+        setShowShortcuts((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [currentDoc, filteredEvidences, selectedEvidence, updateEvidence, handleExport, goToDoc])
 
   if (!currentDoc) {
     return (
@@ -214,12 +331,6 @@ export default function EvidenceVerificationPage() {
   }
 
   const pdfUrl = projectId ? api.getDocumentPdfUrl(projectId, currentDoc.id) : null
-
-  const filteredEvidences = currentDoc.evidences.filter((e) => {
-    if (filterStatus === 'pending') return !e.userResponse
-    if (filterStatus === 'reviewed') return !!e.userResponse
-    return true
-  })
 
   const reviewedCount = currentDoc.evidences.filter((e) => e.userResponse).length
   const totalCount = currentDoc.evidences.length
@@ -255,6 +366,18 @@ export default function EvidenceVerificationPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}
+            className="rounded-lg border border-surface-200 bg-white px-2 py-1 text-xs text-surface-600"
+            aria-label="Export format"
+          >
+            <option value="excel">Excel</option>
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+            <option value="bibtex">BibTeX</option>
+            <option value="ris">RIS</option>
+          </select>
           <button onClick={() => { addToast('success', 'All changes saved automatically') }} className="btn-secondary text-sm py-2" aria-label="Save changes">
             <Save className="h-4 w-4" /> Save
           </button>
@@ -265,16 +388,23 @@ export default function EvidenceVerificationPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-1/2 p-3">
+        <div className="p-3" style={{ width: `${leftWidth}%` }}>
           <PDFViewer
             pdfUrl={pdfUrl}
             fileName={currentDoc.name}
             highlightPage={selectedEvidence?.page}
             highlightBbox={selectedEvidence?.bboxJson}
+            highlights={currentDoc.evidences.map((e) => ({ page: e.page, bbox: e.bboxJson || null }))}
           />
         </div>
 
-        <div className="w-1/2 border-l border-surface-200 bg-white flex flex-col">
+        <div
+          className="w-1 cursor-col-resize bg-surface-200 hover:bg-primary-300"
+          onMouseDown={() => { resizingRef.current = true }}
+          aria-label="Resize panels"
+        />
+
+        <div className="border-l border-surface-200 bg-white flex flex-col" style={{ width: `${100 - leftWidth}%` }}>
           <div className="border-b border-surface-200 px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -298,6 +428,24 @@ export default function EvidenceVerificationPage() {
               </div>
             </div>
 
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search evidence text / reason" className="rounded border border-surface-200 px-2 py-1 text-xs" />
+              <select value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} className="rounded border border-surface-200 px-2 py-1 text-xs">
+                <option value="all">All Codes</option>
+                {codingScheme.map((c) => <option key={c.id} value={c.id}>{c.code}</option>)}
+              </select>
+              <input value={pageRange} onChange={(e) => setPageRange(e.target.value)} placeholder="Page range (e.g. 3-8)" className="rounded border border-surface-200 px-2 py-1 text-xs" />
+              <input type="number" min={0} max={1} step={0.05} value={minConfidence} onChange={(e) => setMinConfidence(Number(e.target.value) || 0)} placeholder="Min confidence" className="rounded border border-surface-200 px-2 py-1 text-xs" />
+            </div>
+
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={() => markBatch('yes')} className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">Batch Yes</button>
+              <button onClick={() => markBatch('no')} className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">Batch No</button>
+              <button onClick={() => setSelectedIds(new Set(filteredEvidences.map((e) => e.id)))} className="rounded bg-surface-100 px-2 py-1 text-xs text-surface-600">Select Filtered</button>
+              <button onClick={() => setSelectedIds(new Set())} className="rounded bg-surface-100 px-2 py-1 text-xs text-surface-600">Clear Selection</button>
+              <button onClick={() => setShowShortcuts((v) => !v)} className="ml-auto flex items-center gap-1 rounded bg-surface-100 px-2 py-1 text-xs text-surface-600"><Keyboard className="h-3 w-3" /> Shortcuts</button>
+            </div>
+
             <div className="mt-3 flex items-center gap-3">
               <div
                 className="flex-1 h-2 rounded-full bg-surface-100 overflow-hidden"
@@ -318,7 +466,13 @@ export default function EvidenceVerificationPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <div
+            className="flex-1 overflow-y-auto px-6 py-4 space-y-3"
+            onScroll={(e) => {
+              const el = e.currentTarget
+              if (el.scrollTop + el.clientHeight > el.scrollHeight - 220) setVisibleCount((v) => v + 60)
+            }}
+          >
             {currentDoc.evidences.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-surface-400">
                 <Loader2 className="h-8 w-8 animate-spin mb-3" />
@@ -332,7 +486,7 @@ export default function EvidenceVerificationPage() {
                 </p>
               </div>
             ) : (
-              filteredEvidences.map((evidence, i) => {
+              filteredEvidences.slice(0, visibleCount).map((evidence, i) => {
                 const code = codingScheme.find((c) => evidence.relevantCodes.includes(c.id))
                 return (
                   <EvidenceCard
@@ -342,13 +496,27 @@ export default function EvidenceVerificationPage() {
                     isSelected={selectedEvidence?.id === evidence.id}
                     codeName={code ? `${code.code}: ${code.description}` : null}
                     noteExpanded={noteExpanded === evidence.id}
+                    selectedForBatch={selectedIds.has(evidence.id)}
                     onClick={() => setSelectedEvidence(evidence)}
                     onResponse={(r) => handleResponse(evidence.id, r)}
                     onToggleNote={() => setNoteExpanded(noteExpanded === evidence.id ? null : evidence.id)}
                     onNoteChange={(note) => handleNoteChange(evidence.id, note)}
+                    onToggleSelect={() => {
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(evidence.id)) next.delete(evidence.id)
+                        else next.add(evidence.id)
+                        return next
+                      })
+                    }}
                   />
                 )
               })
+            )}
+            {filteredEvidences.length > visibleCount && (
+              <div className="py-2 text-center">
+                <button onClick={() => setVisibleCount((v) => v + 80)} className="rounded bg-surface-100 px-3 py-1 text-xs text-surface-600">Load more</button>
+              </div>
             )}
           </div>
 
@@ -374,6 +542,16 @@ export default function EvidenceVerificationPage() {
           </div>
         </div>
       </div>
+      {showShortcuts && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-lg border border-surface-200 bg-white p-3 text-xs text-surface-600 shadow-lg">
+          <p className="font-semibold text-surface-700">Keyboard shortcuts</p>
+          <p>J/K: next/prev evidence</p>
+          <p>Y/N: mark selected yes/no</p>
+          <p>Left/Right: switch document</p>
+          <p>Ctrl/Cmd+E: export</p>
+          <p>?: toggle this help</p>
+        </div>
+      )}
     </div>
   )
 }
