@@ -740,30 +740,43 @@ class ZoteroImportReq(BaseModel):
 
 class ZoteroApiKeyReq(BaseModel):
     api_key: str
+    project_id: Optional[str] = None
 
 
 @router.post("/api/integrations/zotero/connect-apikey")
 def zotero_connect_apikey(
     req: ZoteroApiKeyReq,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user_optional),
 ):
-    """Verify a Zotero personal API key and store it on the user profile."""
+    """Verify a Zotero personal API key and store it in project settings (no auth required)."""
     try:
         info = zotero_oauth.verify_apikey(req.api_key)
     except Exception as e:
         raise HTTPException(400, f"API key verification failed: {e}")
-    u = db.query(User).filter(User.id == user.id).first()
-    if not u:
-        raise HTTPException(404, "User not found")
-    oj = dict(u.oauth_json or {})
-    oj["zotero"] = {
-        "api_key": req.api_key,
-        "userID": info["userID"],
-        "username": info.get("username", ""),
-    }
-    u.oauth_json = oj
-    db.commit()
+
+    if req.project_id:
+        p = db.query(Project).filter(Project.id == req.project_id).first()
+        if p:
+            s = dict(p.settings_json or {})
+            s["zotero_api_key"] = req.api_key
+            s["zotero_user_id"] = info["userID"]
+            s["zotero_username"] = info.get("username", "")
+            p.settings_json = s
+            db.commit()
+
+    if user:
+        u = db.query(User).filter(User.id == user.id).first()
+        if u:
+            oj = dict(u.oauth_json or {})
+            oj["zotero"] = {
+                "api_key": req.api_key,
+                "userID": info["userID"],
+                "username": info.get("username", ""),
+            }
+            u.oauth_json = oj
+            db.commit()
+
     return _ok({"connected": True, "userID": info["userID"], "username": info.get("username", "")})
 
 
@@ -802,9 +815,27 @@ def zotero_callback(
 
 
 @router.get("/api/integrations/zotero/status")
-def zotero_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    u = db.query(User).filter(User.id == user.id).first()
-    z = (u.oauth_json or {}).get("zotero") if u and u.oauth_json else None
+def zotero_status(
+    project_id: Optional[str] = None,
+    user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    z = None
+    if user:
+        u = db.query(User).filter(User.id == user.id).first()
+        z = (u.oauth_json or {}).get("zotero") if u and u.oauth_json else None
+
+    if not z and project_id:
+        p = db.query(Project).filter(Project.id == project_id).first()
+        if p and p.settings_json:
+            s = p.settings_json
+            if s.get("zotero_api_key"):
+                z = {
+                    "api_key": s["zotero_api_key"],
+                    "userID": s.get("zotero_user_id"),
+                    "username": s.get("zotero_username"),
+                }
+
     connected = bool(z and (z.get("api_key") or z.get("oauth_token")))
     mode = "apikey" if (z or {}).get("api_key") else ("oauth" if (z or {}).get("oauth_token") else None)
     return _ok(
@@ -822,13 +853,26 @@ def zotero_import_items(
     project_id: str,
     req: ZoteroImportReq,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user_optional),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(404, "Project not found")
-    u = db.query(User).filter(User.id == user.id).first()
-    z = (u.oauth_json or {}).get("zotero") if u and u.oauth_json else None
+
+    z = None
+    if user:
+        u = db.query(User).filter(User.id == user.id).first()
+        z = (u.oauth_json or {}).get("zotero") if u and u.oauth_json else None
+
+    if not z and p.settings_json:
+        s = p.settings_json
+        if s.get("zotero_api_key"):
+            z = {
+                "api_key": s["zotero_api_key"],
+                "userID": s.get("zotero_user_id"),
+                "username": s.get("zotero_username"),
+            }
+
     if not z:
         raise HTTPException(400, "Connect Zotero first (paste API Key in Settings)")
 

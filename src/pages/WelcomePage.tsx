@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   BookOpen,
@@ -9,6 +9,7 @@ import {
   FileText,
   Brain,
   Shield,
+  LogIn,
 } from 'lucide-react'
 
 const fadeUp = {
@@ -66,9 +67,14 @@ export default function WelcomePage() {
               SLR<span className="text-primary-600">System</span>
             </span>
           </div>
-          <button onClick={() => navigate('/mode')} className="btn-primary text-sm">
-            Get Started <ArrowRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            <Link to="/login" className="inline-flex items-center gap-1 text-sm font-medium text-surface-600 hover:text-primary-600 transition-colors">
+              <LogIn className="h-4 w-4" /> Login
+            </Link>
+            <button onClick={() => navigate('/mode')} className="btn-primary text-sm">
+              Get Started <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </nav>
 

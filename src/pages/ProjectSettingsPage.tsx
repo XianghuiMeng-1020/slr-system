@@ -29,7 +29,7 @@ export default function ProjectSettingsPage() {
       setNotionSecret(String(s.notion_integration_secret || ''))
       setNotionParent(String(s.notion_parent_page_id || ''))
     }).catch(() => {})
-    phase2.zoteroStatus().then((z) => {
+    phase2.zoteroStatus(projectId).then((z) => {
       setZoteroConnected(z.connected)
       setZoteroUser(z.username || z.userID)
       setZoteroMode(z.mode)
@@ -77,7 +77,7 @@ export default function ProjectSettingsPage() {
     setZoteroConnecting(true)
     setZoteroMsg('')
     try {
-      const r = await phase2.zoteroConnectApiKey(zoteroApiKey.trim())
+      const r = await phase2.zoteroConnectApiKey(zoteroApiKey.trim(), projectId ?? undefined)
       setZoteroConnected(true)
       setZoteroUser(r.username || r.userID)
       setZoteroMode('apikey')
