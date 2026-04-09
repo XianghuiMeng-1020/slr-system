@@ -1,0 +1,13 @@
+name = "slr-system"
+compatibility_date = "2024-01-01"
+
+# Cloudflare Pages 构建配置
+pages_build_output_dir = "dist"
+
+[vars]
+NODE_ENV = "production"
+VITE_API_BASE_URL = "https://slr-system-api.onrender.com"
+
+[env.production.vars]
+NODE_ENV = "production"
+VITE_API_BASE_URL = "https://slr-system-api.onrender.com"

@@ -32,6 +32,8 @@ app = FastAPI(title="SLR System API", version="1.0.0")
 _cors_origins = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "https://slr-system.pages.dev",
+    "https://slr-system.pages.dev/",
 ]
 _extra_origins = os.getenv("CORS_ORIGINS", "")
 if _extra_origins:
