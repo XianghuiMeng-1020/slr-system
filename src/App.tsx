@@ -48,7 +48,7 @@ function AppLayout() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<WelcomePage />} />
-          <Route path="/mode" element={<ModeSelectionPage />} />
+          <Route path="/mode" element={<ProtectedRoute><ModeSelectionPage /></ProtectedRoute>} />
           <Route
             path="/upload"
             element={
