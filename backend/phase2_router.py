@@ -731,15 +731,46 @@ def add_member(
     return _ok({"status": "added"})
 
 
-# --- Zotero OAuth 1.0a ---
+# --- Zotero (API Key mode + OAuth 1.0a fallback) ---
 
 
 class ZoteroImportReq(BaseModel):
     limit: int = 20
 
 
+class ZoteroApiKeyReq(BaseModel):
+    api_key: str
+
+
+@router.post("/api/integrations/zotero/connect-apikey")
+def zotero_connect_apikey(
+    req: ZoteroApiKeyReq,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Verify a Zotero personal API key and store it on the user profile."""
+    try:
+        info = zotero_oauth.verify_apikey(req.api_key)
+    except Exception as e:
+        raise HTTPException(400, f"API key verification failed: {e}")
+    u = db.query(User).filter(User.id == user.id).first()
+    if not u:
+        raise HTTPException(404, "User not found")
+    oj = dict(u.oauth_json or {})
+    oj["zotero"] = {
+        "api_key": req.api_key,
+        "userID": info["userID"],
+        "username": info.get("username", ""),
+    }
+    u.oauth_json = oj
+    db.commit()
+    return _ok({"connected": True, "userID": info["userID"], "username": info.get("username", "")})
+
+
 @router.post("/api/integrations/zotero/authorize")
 def zotero_authorize(user: User = Depends(get_current_user)):
+    if not zotero_oauth.oauth_available():
+        raise HTTPException(400, "OAuth not configured. Use API Key mode instead (paste your key in Settings).")
     try:
         out = zotero_oauth.start_authorization(user.id)
         return _ok(out)
@@ -774,9 +805,12 @@ def zotero_callback(
 def zotero_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     u = db.query(User).filter(User.id == user.id).first()
     z = (u.oauth_json or {}).get("zotero") if u and u.oauth_json else None
+    connected = bool(z and (z.get("api_key") or z.get("oauth_token")))
+    mode = "apikey" if (z or {}).get("api_key") else ("oauth" if (z or {}).get("oauth_token") else None)
     return _ok(
         {
-            "connected": bool(z and z.get("oauth_token")),
+            "connected": connected,
+            "mode": mode,
             "username": (z or {}).get("username"),
             "userID": (z or {}).get("userID"),
         }
@@ -795,9 +829,18 @@ def zotero_import_items(
         raise HTTPException(404, "Project not found")
     u = db.query(User).filter(User.id == user.id).first()
     z = (u.oauth_json or {}).get("zotero") if u and u.oauth_json else None
-    if not z or not z.get("oauth_token"):
-        raise HTTPException(400, "Connect Zotero first (authorize flow)")
-    items = zotero_oauth.fetch_top_items(z, limit=min(req.limit, 50))
+    if not z:
+        raise HTTPException(400, "Connect Zotero first (paste API Key in Settings)")
+
+    if z.get("api_key"):
+        items = zotero_oauth.fetch_top_items_apikey(
+            z["api_key"], str(z["userID"]), limit=min(req.limit, 50)
+        )
+    elif z.get("oauth_token"):
+        items = zotero_oauth.fetch_top_items(z, limit=min(req.limit, 50))
+    else:
+        raise HTTPException(400, "Connect Zotero first")
+
     created: list[dict[str, str]] = []
     for it in items:
         data = it.get("data", it)

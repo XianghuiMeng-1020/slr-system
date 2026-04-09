@@ -15,6 +15,9 @@ export default function ProjectSettingsPage() {
   const [indexing, setIndexing] = useState(false)
   const [zoteroConnected, setZoteroConnected] = useState(false)
   const [zoteroUser, setZoteroUser] = useState<string | undefined>()
+  const [zoteroMode, setZoteroMode] = useState<string | undefined>()
+  const [zoteroApiKey, setZoteroApiKey] = useState('')
+  const [zoteroConnecting, setZoteroConnecting] = useState(false)
   const [vectorHint, setVectorHint] = useState('')
 
   useEffect(() => {
@@ -29,6 +32,7 @@ export default function ProjectSettingsPage() {
     phase2.zoteroStatus().then((z) => {
       setZoteroConnected(z.connected)
       setZoteroUser(z.username || z.userID)
+      setZoteroMode(z.mode)
     }).catch(() => {})
     phase2.vectorBackendStatus().then((v) => {
       setVectorHint(v.qdrant_configured ? `Qdrant: ${v.qdrant_url || 'on'}` : 'Qdrant: off (set QDRANT_URL on server)')
@@ -66,14 +70,20 @@ export default function ProjectSettingsPage() {
     }
   }
 
-  const connectZotero = async () => {
+  const connectZoteroApiKey = async () => {
+    if (!zoteroApiKey.trim()) return setMsg('Paste your Zotero API Key first.')
+    setZoteroConnecting(true)
     setMsg('')
     try {
-      const r = await phase2.zoteroAuthorize()
-      window.open(r.authorization_url, '_blank', 'noopener,noreferrer')
-      setMsg('Complete authorization in the Zotero window, then refresh this page.')
+      const r = await phase2.zoteroConnectApiKey(zoteroApiKey.trim())
+      setZoteroConnected(true)
+      setZoteroUser(r.username || r.userID)
+      setZoteroMode('apikey')
+      setMsg(`Zotero connected! User: ${r.username || r.userID}`)
     } catch {
-      setMsg('Zotero authorize failed (set ZOTERO_CLIENT_KEY / SECRET / CALLBACK on server).')
+      setMsg('Zotero API Key verification failed. Check that the key is correct.')
+    } finally {
+      setZoteroConnecting(false)
     }
   }
 
@@ -191,15 +201,51 @@ export default function ProjectSettingsPage() {
             <BookOpen className="h-4 w-4" /> Zotero
           </h2>
           <p className="text-xs text-surface-500">
-            For users to connect their Zotero account, the server must be configured with ZOTERO_CLIENT_KEY, ZOTERO_CLIENT_SECRET, ZOTERO_CALLBACK_URL (backend URL), and ZOTERO_FRONTEND_REDIRECT (this app).
-            <br />
-            <br />
-            <strong>Status:</strong> {zoteroConnected ? <span className="font-medium text-emerald-600">connected ({zoteroUser || 'ok'})</span> : 'not connected'}
+            <strong>Status:</strong>{' '}
+            {zoteroConnected ? (
+              <span className="font-medium text-emerald-600">
+                connected via {zoteroMode || 'apikey'} ({zoteroUser || 'ok'})
+              </span>
+            ) : (
+              'not connected'
+            )}
           </p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void connectZotero()} className="btn-secondary text-sm">Connect Zotero</button>
-            <button type="button" onClick={() => void importZotero()} className="btn-secondary text-sm">Import top items as stubs</button>
-          </div>
+          {!zoteroConnected && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-surface-700 dark:text-surface-200">
+                Zotero API Key
+              </label>
+              <p className="text-xs text-surface-400">
+                Get yours at{' '}
+                <a href="https://www.zotero.org/settings/keys" target="_blank" rel="noopener noreferrer" className="text-accent-600 underline">
+                  zotero.org/settings/keys
+                </a>
+                {' '}&rarr; Create new private key
+              </p>
+              <input
+                type="password"
+                value={zoteroApiKey}
+                onChange={(e) => setZoteroApiKey(e.target.value)}
+                className="w-full rounded-lg border border-surface-200 p-2 text-sm dark:border-surface-600 dark:bg-surface-800"
+                placeholder="Paste your Zotero API key here"
+              />
+              <button
+                type="button"
+                onClick={() => void connectZoteroApiKey()}
+                disabled={zoteroConnecting}
+                className="btn-primary text-sm"
+              >
+                {zoteroConnecting ? 'Verifying…' : 'Connect Zotero'}
+              </button>
+            </div>
+          )}
+          {zoteroConnected && (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void importZotero()} className="btn-secondary text-sm">
+                Import top items as stubs
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 space-y-3 rounded-xl border border-surface-200 bg-white p-6 dark:border-surface-700 dark:bg-surface-900">

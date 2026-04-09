@@ -337,13 +337,19 @@ export const phase2 = {
       reviewers?: string[]
     }>(`/projects/${projectId}/irr`)
   },
+  zoteroConnectApiKey(apiKey: string) {
+    return request<{ connected: boolean; userID: string; username: string }>('/integrations/zotero/connect-apikey', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey }),
+    })
+  },
   zoteroAuthorize() {
     return request<{ authorization_url: string; oauth_token: string }>('/integrations/zotero/authorize', {
       method: 'POST',
     })
   },
   zoteroStatus() {
-    return request<{ connected: boolean; username?: string; userID?: string }>('/integrations/zotero/status')
+    return request<{ connected: boolean; mode?: string; username?: string; userID?: string }>('/integrations/zotero/status')
   },
   zoteroImport(projectId: string, limit = 20) {
     return request<{ imported: number; items: { id: string; title: string }[] }>(
