@@ -191,8 +191,10 @@ export default function ProjectSettingsPage() {
             <BookOpen className="h-4 w-4" /> Zotero
           </h2>
           <p className="text-xs text-surface-500">
-            Server needs ZOTERO_CLIENT_KEY, ZOTERO_CLIENT_SECRET, ZOTERO_CALLBACK_URL (backend URL), ZOTERO_FRONTEND_REDIRECT (this app).
-            Status: {zoteroConnected ? `connected (${zoteroUser || 'ok'})` : 'not connected'}
+            For users to connect their Zotero account, the server must be configured with ZOTERO_CLIENT_KEY, ZOTERO_CLIENT_SECRET, ZOTERO_CALLBACK_URL (backend URL), and ZOTERO_FRONTEND_REDIRECT (this app).
+            <br />
+            <br />
+            <strong>Status:</strong> {zoteroConnected ? <span className="font-medium text-emerald-600">connected ({zoteroUser || 'ok'})</span> : 'not connected'}
           </p>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => void connectZotero()} className="btn-secondary text-sm">Connect Zotero</button>
