@@ -70,18 +70,25 @@ export default function ProjectSettingsPage() {
     }
   }
 
+  const [zoteroMsg, setZoteroMsg] = useState('')
+
   const connectZoteroApiKey = async () => {
-    if (!zoteroApiKey.trim()) return setMsg('Paste your Zotero API Key first.')
+    if (!zoteroApiKey.trim()) { setZoteroMsg('Please paste your Zotero API Key first.'); return }
     setZoteroConnecting(true)
-    setMsg('')
+    setZoteroMsg('')
     try {
       const r = await phase2.zoteroConnectApiKey(zoteroApiKey.trim())
       setZoteroConnected(true)
       setZoteroUser(r.username || r.userID)
       setZoteroMode('apikey')
-      setMsg(`Zotero connected! User: ${r.username || r.userID}`)
-    } catch {
-      setMsg('Zotero API Key verification failed. Check that the key is correct.')
+      setZoteroMsg(`Connected! User: ${r.username || r.userID}`)
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : String(e)
+      if (detail.includes('401') || detail.toLowerCase().includes('authenticated')) {
+        setZoteroMsg('Login session expired. Please log out and log in again, then retry.')
+      } else {
+        setZoteroMsg(`Connection failed: ${detail.slice(0, 200)}`)
+      }
     } finally {
       setZoteroConnecting(false)
     }
@@ -245,6 +252,11 @@ export default function ProjectSettingsPage() {
                 Import top items as stubs
               </button>
             </div>
+          )}
+          {zoteroMsg && (
+            <p className={`text-sm ${zoteroMsg.startsWith('Connected') ? 'text-emerald-600' : 'text-red-600'}`}>
+              {zoteroMsg}
+            </p>
           )}
         </div>
 
