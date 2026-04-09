@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 
@@ -225,13 +226,17 @@ def _extract_ocr_blocks(doc: fitz.Document) -> list[TextBlock]:
     return ocr_blocks
 
 
-def extract_text_blocks(pdf_path: str, include_all: bool = False) -> list[TextBlock]:
+MAX_PAGES_DEFAULT = int(os.getenv("MAX_PAGES_PER_DOC", "30"))
+
+
+def extract_text_blocks(pdf_path: str, include_all: bool = False, max_pages: int | None = None) -> list[TextBlock]:
     blocks: list[TextBlock] = []
     doc = fitz.open(pdf_path)
     current_section = "body"
     in_skip_section = False
+    page_limit = len(doc) if include_all else min(len(doc), max_pages or MAX_PAGES_DEFAULT)
 
-    for page_num in range(len(doc)):
+    for page_num in range(page_limit):
         page = doc[page_num]
         text_dict = page.get_text("dict")
         raw_text_blocks = [b for b in text_dict.get("blocks", []) if b.get("type") == 0]
