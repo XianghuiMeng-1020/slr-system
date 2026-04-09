@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronLeft,
@@ -20,9 +20,11 @@ import {
   Filter,
   Loader2,
   Keyboard,
+  MessageCircle,
+  Columns2,
 } from 'lucide-react'
 import { useAppStore, type EvidenceItem } from '../store/useAppStore'
-import { api } from '../services/api'
+import { api, phase2 } from '../services/api'
 import PDFViewer from '../components/PDFViewer'
 
 const EvidenceCard = memo(function EvidenceCard({
@@ -180,6 +182,7 @@ const EvidenceCard = memo(function EvidenceCard({
 
 export default function EvidenceVerificationPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const documents = useAppStore((s) => s.documents)
   const codingScheme = useAppStore((s) => s.codingScheme)
   const currentDocumentIndex = useAppStore((s) => s.currentDocumentIndex)
@@ -203,6 +206,11 @@ export default function EvidenceVerificationPage() {
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [exportFormat, setExportFormat] = useState<'excel' | 'csv' | 'json' | 'bibtex' | 'ris'>('excel')
   const resizingRef = useRef(false)
+  const [compareDocId, setCompareDocId] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatLoading, setChatLoading] = useState(false)
 
   const currentDoc = documents[currentDocumentIndex]
 
@@ -228,6 +236,13 @@ export default function EvidenceVerificationPage() {
       hydrateProjectData()
     }
   }, [documents.length, hydrateProjectData])
+
+  useEffect(() => {
+    const docId = searchParams.get('doc')
+    if (!docId || documents.length === 0) return
+    const idx = documents.findIndex((d) => d.id === docId)
+    if (idx >= 0) setCurrentDocumentIndex(idx)
+  }, [searchParams, documents, setCurrentDocumentIndex])
 
   useEffect(() => {
     if (currentDoc && currentDoc.evidences.length === 0 && currentDoc.status === 'completed') {
@@ -264,7 +279,18 @@ export default function EvidenceVerificationPage() {
   const handleResponse = useCallback((evidenceId: string, response: 'yes' | 'no') => {
     if (!currentDoc) return
     updateEvidence(currentDoc.id, evidenceId, { userResponse: response })
-  }, [currentDoc, updateEvidence])
+    const ev = currentDoc.evidences.find((e) => e.id === evidenceId)
+    if (projectId && ev) {
+      phase2
+        .feedback(projectId, {
+          evidence_id: evidenceId,
+          document_id: currentDoc.id,
+          response,
+          text_preview: ev.text,
+        })
+        .catch(() => {})
+    }
+  }, [currentDoc, updateEvidence, projectId])
 
   const handleNoteChange = useCallback((evidenceId: string, note: string) => {
     if (!currentDoc) return
@@ -274,6 +300,31 @@ export default function EvidenceVerificationPage() {
   const handleExport = useCallback(() => {
     if (projectId) window.open(api.exportProjectExtended(projectId, exportFormat), '_blank')
   }, [projectId, exportFormat])
+
+  const sendPaperChat = useCallback(async () => {
+    if (!projectId || !currentDoc) return
+    const q = chatInput.trim()
+    if (!q) return
+    setChatInput('')
+    const histForApi = chatMessages.map((m) => ({ role: m.role, content: m.content }))
+    setChatMessages((prev) => [...prev, { role: 'user', content: q }])
+    setChatLoading(true)
+    try {
+      const r = await phase2.chatWithPaper(projectId, currentDoc.id, {
+        question: q,
+        history: histForApi,
+      })
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: r.answer }])
+    } catch {
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: 'Chat request failed. Is the API running?' }])
+    } finally {
+      setChatLoading(false)
+    }
+  }, [projectId, currentDoc, chatInput, chatMessages])
+
+  useEffect(() => {
+    setChatMessages([])
+  }, [currentDoc?.id])
 
   const markBatch = useCallback((value: 'yes' | 'no') => {
     if (!currentDoc || selectedIds.size === 0) return
@@ -365,7 +416,27 @@ export default function EvidenceVerificationPage() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={compareDocId || ''}
+            onChange={(e) => setCompareDocId(e.target.value || null)}
+            className="rounded-lg border border-surface-200 bg-white px-2 py-1 text-xs text-surface-600 max-w-[140px]"
+            title="Split-screen second document"
+            aria-label="Compare with document"
+          >
+            <option value="">— Split: off —</option>
+            {documents.filter((d) => d.id !== currentDoc.id).map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setChatOpen((v) => !v)}
+            className={`rounded-lg px-2 py-1.5 text-xs font-medium ${chatOpen ? 'bg-accent-100 text-accent-700' : 'text-surface-600 hover:bg-surface-100'}`}
+            aria-pressed={chatOpen}
+          >
+            <MessageCircle className="inline h-3.5 w-3.5 mr-1" /> Chat
+          </button>
           <select
             value={exportFormat}
             onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}
@@ -388,14 +459,72 @@ export default function EvidenceVerificationPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="p-3" style={{ width: `${leftWidth}%` }}>
-          <PDFViewer
-            pdfUrl={pdfUrl}
-            fileName={currentDoc.name}
-            highlightPage={selectedEvidence?.page}
-            highlightBbox={selectedEvidence?.bboxJson}
-            highlights={currentDoc.evidences.map((e) => ({ page: e.page, bbox: e.bboxJson || null }))}
-          />
+        <div className="flex flex-col p-3 min-h-0" style={{ width: `${leftWidth}%` }}>
+          <div className={`flex min-h-0 flex-1 gap-2 ${compareDocId ? 'flex-row' : 'flex-col'}`}>
+            <div className="min-h-0 flex-1 flex flex-col">
+              <div className="mb-1 flex items-center gap-1 text-[10px] text-surface-400">
+                <Columns2 className="h-3 w-3" /> Primary
+              </div>
+              <div className="min-h-0 flex-1">
+                <PDFViewer
+                  pdfUrl={pdfUrl}
+                  fileName={currentDoc.name}
+                  highlightPage={selectedEvidence?.page}
+                  highlightBbox={selectedEvidence?.bboxJson}
+                  highlights={currentDoc.evidences.map((e) => ({ page: e.page, bbox: e.bboxJson || null }))}
+                />
+              </div>
+            </div>
+            {compareDocId && projectId && (
+              <div className="min-h-0 flex-1 flex flex-col border-l border-surface-200 pl-2">
+                <div className="mb-1 text-[10px] text-surface-400">Compare</div>
+                <div className="min-h-0 flex-1">
+                  <PDFViewer
+                    pdfUrl={api.getDocumentPdfUrl(projectId, compareDocId)}
+                    fileName={documents.find((d) => d.id === compareDocId)?.name || 'compare.pdf'}
+                    highlightPage={undefined}
+                    highlightBbox={undefined}
+                    highlights={[]}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          {chatOpen && projectId && (
+            <div className="mt-2 flex max-h-80 flex-col rounded-lg border border-surface-200 bg-white p-2 text-sm shadow-sm">
+              <div className="mb-2 max-h-40 space-y-1 overflow-y-auto text-xs">
+                {chatMessages.length === 0 && <p className="text-surface-400">Ask about this paper (RAG).</p>}
+                {chatMessages.map((m, i) => (
+                  <div key={i} className={m.role === 'user' ? 'text-accent-800' : 'text-surface-700'}>
+                    <span className="font-semibold">{m.role === 'user' ? 'You' : 'AI'}:</span> {m.content}
+                  </div>
+                ))}
+                {chatLoading && <p className="text-surface-400">Thinking…</p>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void sendPaperChat()
+                    }
+                  }}
+                  placeholder="Ask a question about this PDF…"
+                  className="flex-1 rounded border border-surface-200 px-2 py-1 text-xs"
+                />
+                <button
+                  type="button"
+                  className="btn-primary py-1 px-3 text-xs"
+                  disabled={chatLoading || !chatInput.trim()}
+                  onClick={() => void sendPaperChat()}
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div

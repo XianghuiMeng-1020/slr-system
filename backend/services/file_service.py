@@ -162,3 +162,22 @@ def extract_zip(zip_path: str, dest_dir: str) -> list[str]:
                     dst.write(src.read())
                 extracted.append(dest_path)
     return extracted
+
+
+def extract_docx_text(path: str) -> str:
+    """Extract plain text from a Word .docx file."""
+    try:
+        from docx import Document as DocxDocument
+    except ImportError as e:
+        raise ValueError("python-docx is required for Word import") from e
+    doc = DocxDocument(path)
+    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def extract_html_text(html: str) -> str:
+    """Strip HTML to plain text."""
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as e:
+        raise ValueError("beautifulsoup4 is required for HTML import") from e
+    return BeautifulSoup(html, "html.parser").get_text("\n")

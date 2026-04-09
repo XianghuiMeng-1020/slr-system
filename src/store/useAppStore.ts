@@ -33,6 +33,7 @@ export interface DocumentLabel {
   confidence?: number | null
   userOverride?: string | null
   supportingEvidenceIds?: string[]
+  reviewerId?: string | null
 }
 
 export interface UploadedDocument {
@@ -69,6 +70,33 @@ type DetailLabelLike = {
   confidence: number | null
   user_override: string | null
   supporting_evidence_ids?: string[]
+  reviewer_id?: string | null
+}
+
+/** When dual-coding stores multiple rows per scheme, show the current reviewer’s row or the shared AI row. */
+function pickLabelsForViewer(labels: DetailLabelLike[]): DetailLabelLike[] {
+  const uid = typeof localStorage !== 'undefined' ? localStorage.getItem('slr-user-id') : null
+  const bySid = new Map<string, DetailLabelLike[]>()
+  for (const l of labels) {
+    const sid = l.scheme_item_id
+    if (!bySid.has(sid)) bySid.set(sid, [])
+    bySid.get(sid)!.push(l)
+  }
+  const out: DetailLabelLike[] = []
+  for (const arr of bySid.values()) {
+    if (uid) {
+      const mine = arr.find((x) => x.reviewer_id === uid)
+      if (mine) {
+        out.push(mine)
+        continue
+      }
+      const neutral = arr.find((x) => !x.reviewer_id)
+      out.push(neutral || arr[0])
+    } else {
+      out.push(arr.find((x) => !x.reviewer_id) || arr[0])
+    }
+  }
+  return out
 }
 
 type DetailEvidenceLike = {
@@ -334,13 +362,14 @@ export const useAppStore = create<AppState>()(
                     ...d,
                     pageCount: detail.page_count,
                     status: detail.status as UploadedDocument['status'],
-                    labels: detail.labels.map((l: DetailLabelLike) => ({
+                    labels: pickLabelsForViewer(detail.labels as DetailLabelLike[]).map((l: DetailLabelLike) => ({
                       id: l.id,
                       schemeItemId: l.scheme_item_id,
                       value: l.user_override || l.value,
                       confidence: l.confidence,
                       userOverride: l.user_override,
                       supportingEvidenceIds: l.supporting_evidence_ids || [],
+                      reviewerId: l.reviewer_id ?? null,
                     })),
                     evidences: detail.evidences.map((e: DetailEvidenceLike) => ({
                       id: e.id,
@@ -379,7 +408,10 @@ export const useAppStore = create<AppState>()(
           ),
         }))
         try {
-          await api.updateLabels(projectId, docId, [{ scheme_item_id: schemeItemId, value }])
+          const uid = typeof localStorage !== 'undefined' ? localStorage.getItem('slr-user-id') : null
+          await api.updateLabels(projectId, docId, [
+            { scheme_item_id: schemeItemId, value, ...(uid ? { reviewer_id: uid } : {}) },
+          ])
         } catch (e: unknown) {
           set({ documents: prevDocs })
           get().addToast('error', `Save label failed: ${getErrorMessage(e)}`)

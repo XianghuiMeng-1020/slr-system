@@ -12,3 +12,16 @@ Pillow==11.2.1
 pytesseract==0.3.13
 json5==0.9.25
 pytest==8.4.1
+httpx==0.28.1
+psycopg2-binary==2.9.10
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+beautifulsoup4==4.12.3
+python-docx==1.1.2
+boto3==1.35.90
+celery==5.4.0
+redis==5.2.1
+qdrant-client==1.12.1
+requests==2.32.3
+requests-oauthlib==2.0.0

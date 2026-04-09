@@ -202,3 +202,68 @@ def export_project_references(db: Session, project_id: str, format: str = "bibte
 def re_sub_nonword(text: str) -> str:
     import re
     return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def export_results_docx_draft(db: Session, project_id: str) -> bytes:
+    """Minimal Word document with summary paragraphs for Results section."""
+    try:
+        from docx import Document as DocxDocument
+    except ImportError:
+        raise RuntimeError("python-docx not installed")
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError("Project not found")
+    scheme_items = db.query(CodingSchemeItem).filter(CodingSchemeItem.project_id == project_id).all()
+    documents = db.query(Document).filter(Document.project_id == project_id).all()
+
+    doc = DocxDocument()
+    doc.add_heading("Systematic Review — Results (draft)", 0)
+    doc.add_paragraph(
+        f"Project ID: {project_id}. Mode: {project.mode}. "
+        f"This draft was auto-generated from coded labels and evidence."
+    )
+    for s in scheme_items:
+        doc.add_heading(f"Theme: {s.code}", level=1)
+        doc.add_paragraph(s.description or "")
+        for d in documents:
+            labels = (
+                db.query(DocumentLabel)
+                .filter(
+                    DocumentLabel.document_id == d.id,
+                    DocumentLabel.scheme_item_id == s.id,
+                )
+                .all()
+            )
+            for lb in labels:
+                doc.add_paragraph(
+                    f"{d.filename}: label={lb.user_override or lb.value} (confidence={lb.confidence})",
+                    style="List Bullet",
+                )
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def export_nvivo_xml(db: Session, project_id: str) -> str:
+    """Simple NVivo-friendly XML (sources + text extracts)."""
+    from xml.sax.saxutils import escape
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError("Project not found")
+    documents = db.query(Document).filter(Document.project_id == project_id).all()
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<SLRProject>", f"<id>{escape(project_id)}</id>"]
+    for d in documents:
+        parts.append("<Source>")
+        parts.append(f"<name>{escape(d.filename)}</name>")
+        evs = db.query(Evidence).filter(Evidence.document_id == d.id).all()
+        for e in evs:
+            parts.append("<Extract>")
+            parts.append(f"<page>{e.page}</page>")
+            parts.append(f"<text>{escape(e.text[:2000])}</text>")
+            parts.append("</Extract>")
+        parts.append("</Source>")
+    parts.append("</SLRProject>")
+    return "\n".join(parts)

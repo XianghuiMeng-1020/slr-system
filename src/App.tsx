@@ -11,6 +11,12 @@ const UploadPage = lazy(() => import('./pages/UploadPage'))
 const ThemeVerificationPage = lazy(() => import('./pages/ThemeVerificationPage'))
 const EvidenceVerificationPage = lazy(() => import('./pages/EvidenceVerificationPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const PrismaPage = lazy(() => import('./pages/PrismaPage'))
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
+const ShortcutSettingsPage = lazy(() => import('./pages/ShortcutSettingsPage'))
+const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const ConflictsPage = lazy(() => import('./pages/ConflictsPage'))
 
 function LoadingFallback() {
   const { t } = useI18n()
@@ -64,6 +70,47 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/prisma"
+              element={
+                <ProtectedRoute requireMode>
+                  <PrismaPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute requireMode>
+                  <AnalyticsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shortcuts"
+              element={
+                <ProtectedRoute requireMode>
+                  <ShortcutSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute requireMode>
+                  <ProjectSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conflicts"
+              element={
+                <ProtectedRoute requireMode>
+                  <ConflictsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/login" element={<LoginPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

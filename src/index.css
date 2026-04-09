@@ -65,6 +65,16 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  button,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  html.dark body {
+    background-color: var(--color-surface-950);
+    color: var(--color-surface-100);
+  }
+
   #root {
     min-height: 100vh;
   }
@@ -85,5 +95,9 @@
 
   .glass {
     @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-lg;
+  }
+
+  .touch-manipulation {
+    touch-action: manipulation;
   }
 }

@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from database import engine, get_db, Base, SessionLocal
 from models import Project, Document, CodingSchemeItem, DocumentLabel, Evidence
 from services import pdf_service, ai_service, file_service, export_service
+from services.document_processor import process_one_document
+from phase2_router import broadcast_project, router as phase2_router, set_broadcast_loop
 
 load_dotenv()
 logging.basicConfig(
@@ -28,6 +30,14 @@ logger = logging.getLogger("slr-system")
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SLR System API", version="1.0.0")
+app.include_router(phase2_router)
+
+
+@app.on_event("startup")
+async def _startup_broadcast_loop():
+    import asyncio
+
+    set_broadcast_loop(asyncio.get_running_loop())
 
 _cors_origins = [
     "http://localhost:5173",
@@ -84,6 +94,12 @@ def _migrate_sqlite_schema():
         ensure_col("evidences", "exact_quote", "exact_quote TEXT")
         ensure_col("evidences", "evidence_type", "evidence_type VARCHAR")
         ensure_col("evidences", "confidence", "confidence FLOAT")
+        ensure_col("projects", "settings_json", "settings_json TEXT")
+        ensure_col("documents", "doi", "doi TEXT")
+        ensure_col("documents", "title", "title TEXT")
+        ensure_col("documents", "metadata_json", "metadata_json TEXT")
+        ensure_col("document_labels", "reviewer_id", "reviewer_id TEXT")
+        ensure_col("users", "oauth_json", "oauth_json TEXT")
 
 
 _migrate_sqlite_schema()
@@ -118,6 +134,7 @@ class LabelRes(BaseModel):
     confidence: Optional[float] = None
     user_override: Optional[str] = None
     supporting_evidence_ids: list[str] = []
+    reviewer_id: Optional[str] = None
 
 class EvidenceRes(BaseModel):
     id: str
@@ -418,87 +435,6 @@ def process_project(project_id: str, background_tasks: BackgroundTasks, db: Sess
     return _ok({"task_id": task_id, "total": len(documents)}, "Processing started")
 
 
-def _process_one_document(project_mode: str, doc_id: str, scheme_dicts: list[dict]):
-    local_db = SessionLocal()
-    try:
-        doc = local_db.query(Document).filter(Document.id == doc_id).first()
-        if not doc:
-            return False, "Document not found"
-        doc.status = "processing"
-        doc.error_message = None
-        local_db.commit()
-
-        if not doc.file_path or not os.path.exists(doc.file_path):
-            doc.status = "error"
-            doc.error_message = "File missing on disk"
-            local_db.commit()
-            return False, doc.error_message
-
-        if doc.text_blocks_cache:
-            text_blocks = [pdf_service.TextBlock.from_dict(x) for x in (doc.text_blocks_cache or [])]
-        else:
-            text_blocks = pdf_service.extract_text_blocks(doc.file_path)
-            doc.text_blocks_cache = [b.to_dict() for b in text_blocks]
-            local_db.commit()
-
-        if project_mode == "theme-verification":
-            labels = ai_service.generate_labels(text_blocks, scheme_dicts, evidences=None)
-            local_db.query(DocumentLabel).filter(DocumentLabel.document_id == doc.id).delete()
-            for label in labels:
-                local_db.add(DocumentLabel(
-                    id=uuid.uuid4().hex[:12],
-                    document_id=doc.id,
-                    scheme_item_id=label.scheme_item_id,
-                    value=label.value,
-                    confidence=label.confidence,
-                    supporting_evidence_ids=label.supporting_evidence_ids or [],
-                ))
-        else:
-            evidences = ai_service.extract_evidences(text_blocks, scheme_dicts)
-            local_db.query(Evidence).filter(Evidence.document_id == doc.id).delete()
-            for ev in evidences:
-                local_db.add(Evidence(
-                    id=ev.id or uuid.uuid4().hex[:12],
-                    document_id=doc.id,
-                    text=ev.text,
-                    page=ev.page,
-                    bbox_json=ev.bbox,
-                    relevant_code_ids=ev.relevant_code_ids,
-                    extracted_stats=ev.extracted_stats or [],
-                    ai_reason=ev.ai_reason,
-                    exact_quote=ev.exact_quote,
-                    evidence_type=ev.evidence_type,
-                    confidence=ev.confidence,
-                ))
-            labels = ai_service.generate_labels(text_blocks, scheme_dicts, evidences=evidences)
-            local_db.query(DocumentLabel).filter(DocumentLabel.document_id == doc.id).delete()
-            for label in labels:
-                local_db.add(DocumentLabel(
-                    id=uuid.uuid4().hex[:12],
-                    document_id=doc.id,
-                    scheme_item_id=label.scheme_item_id,
-                    value=label.value,
-                    confidence=label.confidence,
-                    supporting_evidence_ids=label.supporting_evidence_ids or [],
-                ))
-
-        doc.status = "completed"
-        doc.error_message = None
-        local_db.commit()
-        return True, ""
-    except Exception as e:
-        local_db.rollback()
-        doc = local_db.query(Document).filter(Document.id == doc_id).first()
-        if doc:
-            doc.status = "error"
-            doc.error_message = str(e)[:1500]
-            local_db.commit()
-        logger.exception("Error processing document %s", doc_id)
-        return False, str(e)
-    finally:
-        local_db.close()
-
-
 def _process_documents_task(task_id: str, project_id: str):
     task = _PROCESS_TASKS.get(task_id)
     if not task:
@@ -526,7 +462,7 @@ def _process_documents_task(task_id: str, project_id: str):
         db.close()
 
     with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(_process_one_document, project_mode, doc_id, scheme_dicts) for doc_id in doc_ids]
+        futures = [executor.submit(process_one_document, project_mode, doc_id, scheme_dicts) for doc_id in doc_ids]
         for f in as_completed(futures):
             ok, _ = f.result()
             task["processed"] += 1
@@ -628,6 +564,7 @@ def get_document_detail(project_id: str, doc_id: str, db: Session = Depends(get_
                 "confidence": l.confidence,
                 "user_override": l.user_override,
                 "supporting_evidence_ids": l.supporting_evidence_ids or [],
+                "reviewer_id": l.reviewer_id,
             }
             for l in labels
         ],
@@ -699,6 +636,15 @@ def get_document_pdf(project_id: str, doc_id: str, db: Session = Depends(get_db)
     return FileResponse(doc.file_path, media_type="application/pdf", filename=doc.filename)
 
 
+def _post_notion_webhook_safe(url: str, payload: dict) -> None:
+    try:
+        import httpx
+
+        httpx.post(url, json=payload, timeout=8.0)
+    except Exception:
+        logger.exception("Notion webhook POST failed")
+
+
 @app.put("/api/projects/{project_id}/documents/{doc_id}/labels")
 def update_labels(project_id: str, doc_id: str, req: UpdateLabelsReq, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id, Document.project_id == project_id).first()
@@ -706,20 +652,53 @@ def update_labels(project_id: str, doc_id: str, req: UpdateLabelsReq, db: Sessio
         raise HTTPException(404, "Document not found")
 
     for item in req.labels:
-        label = db.query(DocumentLabel).filter(
+        scheme_item_id = item.get("scheme_item_id")
+        if not scheme_item_id:
+            continue
+        reviewer_id = item.get("reviewer_id")
+        q = db.query(DocumentLabel).filter(
             DocumentLabel.document_id == doc_id,
-            DocumentLabel.scheme_item_id == item.get("scheme_item_id"),
-        ).first()
+            DocumentLabel.scheme_item_id == scheme_item_id,
+        )
+        if reviewer_id is not None:
+            q = q.filter(DocumentLabel.reviewer_id == reviewer_id)
+        else:
+            q = q.filter(DocumentLabel.reviewer_id.is_(None))
+        label = q.first()
+        val = item.get("value", "Unclear")
         if label:
-            label.user_override = item.get("value", label.value)
+            label.user_override = val
             if item.get("supporting_evidence_ids") is not None:
                 label.supporting_evidence_ids = item.get("supporting_evidence_ids")
+        else:
+            db.add(
+                DocumentLabel(
+                    id=uuid.uuid4().hex[:12],
+                    document_id=doc_id,
+                    scheme_item_id=scheme_item_id,
+                    value=val,
+                    user_override=val,
+                    confidence=item.get("confidence"),
+                    supporting_evidence_ids=item.get("supporting_evidence_ids") or [],
+                    reviewer_id=reviewer_id,
+                )
+            )
     db.commit()
+    try:
+        broadcast_project(project_id, {"type": "labels_updated", "document_id": doc_id})
+    except Exception:
+        logger.debug("broadcast labels failed", exc_info=True)
     return _ok(None, "Labels updated")
 
 
 @app.put("/api/projects/{project_id}/documents/{doc_id}/evidences")
-def update_evidence(project_id: str, doc_id: str, req: UpdateEvidenceReq, db: Session = Depends(get_db)):
+def update_evidence(
+    project_id: str,
+    doc_id: str,
+    req: UpdateEvidenceReq,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     doc = db.query(Document).filter(Document.id == doc_id, Document.project_id == project_id).first()
     if not doc:
         raise HTTPException(404, "Document not found")
@@ -733,6 +712,24 @@ def update_evidence(project_id: str, doc_id: str, req: UpdateEvidenceReq, db: Se
     if req.user_note is not None:
         ev.user_note = req.user_note
     db.commit()
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if project and isinstance(project.settings_json, dict):
+        wh = project.settings_json.get("notion_webhook_url")
+        if isinstance(wh, str) and wh.startswith("http"):
+            background_tasks.add_task(
+                _post_notion_webhook_safe,
+                wh,
+                {
+                    "event": "evidence_updated",
+                    "project_id": project_id,
+                    "document_id": doc_id,
+                    "evidence_id": req.evidence_id,
+                },
+            )
+    try:
+        broadcast_project(project_id, {"type": "evidence_updated", "document_id": doc_id, "evidence_id": req.evidence_id})
+    except Exception:
+        logger.debug("broadcast evidence failed", exc_info=True)
     return _ok(None, "Evidence updated")
 
 

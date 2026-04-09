@@ -36,7 +36,7 @@ def _make_pdf_bytes(text: str = "Sample study result p < 0.05 with N=100.") -> b
     return out.getvalue()
 
 
-def _mock_extract_evidences(text_blocks, scheme):
+def _mock_extract_evidences(text_blocks, scheme, extra_context=None, **_kwargs):
     if not text_blocks:
         return []
     first = text_blocks[0]
@@ -56,7 +56,7 @@ def _mock_extract_evidences(text_blocks, scheme):
     ]
 
 
-def _mock_generate_labels(text_blocks, scheme, evidences=None):
+def _mock_generate_labels(text_blocks, scheme, evidences=None, extra_context=None, **_kwargs):
     out = []
     for s in scheme:
         out.append(

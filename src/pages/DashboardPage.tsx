@@ -1,10 +1,12 @@
 import { useMemo, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, BarChart3, PieChart, FileText, Search } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, BarChart3, PieChart, FileText, Search, GitBranch, Grid3x3, Keyboard, Settings2, Moon, Sun, GitMerge } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
+import { useTheme } from '../context/ThemeContext'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const { theme, toggle } = useTheme()
   const documents = useAppStore((s) => s.documents)
   const hydrateProjectData = useAppStore((s) => s.hydrateProjectData)
 
@@ -34,15 +36,26 @@ export default function DashboardPage() {
   const reviewedPct = stats.totalEvidence > 0 ? Math.round((stats.reviewedEvidence / stats.totalEvidence) * 100) : 0
 
   return (
-    <div className="min-h-screen bg-surface-50 p-6">
+    <div className="min-h-screen bg-surface-50 p-6 dark:bg-surface-950">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between">
-          <button onClick={() => navigate('/upload')} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-surface-600 border border-surface-200">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+          <button onClick={() => navigate('/upload')} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-surface-600 border border-surface-200 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
-          <div className="flex items-center gap-2 text-surface-700">
+          <div className="flex items-center gap-2 text-surface-700 dark:text-surface-100">
             <BarChart3 className="h-5 w-5 text-primary-600" />
             <h1 className="text-xl font-semibold">Project Dashboard</h1>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={toggle} className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900" aria-label="Toggle dark mode">
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <Link to="/conflicts" className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><GitMerge className="h-4 w-4" /> Conflicts</Link>
+            <Link to="/prisma" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><GitBranch className="h-4 w-4" /> PRISMA</Link>
+            <Link to="/analytics" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><Grid3x3 className="h-4 w-4" /> Heatmap</Link>
+            <Link to="/settings" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><Settings2 className="h-4 w-4" /> Phase 2</Link>
+            <Link to="/shortcuts" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900"><Keyboard className="h-4 w-4" /> Shortcuts</Link>
+            <Link to="/login" className="inline-flex items-center gap-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm dark:border-surface-600 dark:bg-surface-900">Login</Link>
           </div>
         </div>
 
@@ -54,8 +67,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <div className="rounded-xl border border-surface-200 bg-white p-4">
-            <h2 className="mb-3 text-sm font-semibold text-surface-700">Label Distribution</h2>
+          <div className="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-700 dark:bg-surface-900">
+            <h2 className="mb-3 text-sm font-semibold text-surface-700 dark:text-surface-200">Label Distribution</h2>
             <div className="space-y-2 text-xs">
               <Bar label="Present" value={stats.present} total={labelTotal} color="bg-emerald-500" />
               <Bar label="Absent" value={stats.absent} total={labelTotal} color="bg-rose-500" />
@@ -63,8 +76,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-surface-200 bg-white p-4">
-            <h2 className="mb-3 text-sm font-semibold text-surface-700">Evidence Per Document</h2>
+          <div className="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-700 dark:bg-surface-900">
+            <h2 className="mb-3 text-sm font-semibold text-surface-700 dark:text-surface-200">Evidence Per Document</h2>
             <div className="max-h-80 space-y-2 overflow-auto">
               {stats.evidencePerDoc.map((d) => (
                 <Bar key={d.name} label={d.name} value={d.count} total={Math.max(1, ...stats.evidencePerDoc.map((x) => x.count))} color="bg-primary-500" />
@@ -79,9 +92,9 @@ export default function DashboardPage() {
 
 function Card({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-surface-200 bg-white p-4">
-      <div className="mb-2 flex items-center gap-2 text-xs text-surface-500">{icon}{title}</div>
-      <p className="text-xl font-semibold text-surface-800">{value}</p>
+    <div className="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-700 dark:bg-surface-900">
+      <div className="mb-2 flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400">{icon}{title}</div>
+      <p className="text-xl font-semibold text-surface-800 dark:text-surface-100">{value}</p>
     </div>
   )
 }

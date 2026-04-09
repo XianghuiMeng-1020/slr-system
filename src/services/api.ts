@@ -16,10 +16,12 @@ interface ApiEnvelope<T> {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('slr-jwt') : null
   const res = await fetch(`${BASE}${url}`, {
     ...init,
     headers: {
       ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   })
@@ -64,6 +66,7 @@ export interface LabelResponse {
   value: string
   confidence: number | null
   user_override: string | null
+  reviewer_id?: string | null
 }
 
 export interface EvidenceResponse {
@@ -181,7 +184,11 @@ export const api = {
     return `${BASE}/projects/${projectId}/documents/${docId}/pdf`
   },
 
-  updateLabels(projectId: string, docId: string, labels: { scheme_item_id: string; value: string }[]) {
+  updateLabels(
+    projectId: string,
+    docId: string,
+    labels: { scheme_item_id: string; value: string; reviewer_id?: string | null; supporting_evidence_ids?: string[] }[],
+  ) {
     return request<{ message: string }>(`/projects/${projectId}/documents/${docId}/labels`, {
       method: 'PUT',
       body: JSON.stringify({ labels }),
@@ -231,5 +238,131 @@ export const api = {
     return request<{ message: string }>(`/projects/${projectId}`, {
       method: 'DELETE',
     })
+  },
+}
+
+/** Phase 2: RAG, synthesis, analytics APIs (same /api base). */
+export const phase2 = {
+  chatWithPaper(
+    projectId: string,
+    docId: string,
+    body: { question: string; history?: { role: string; content: string }[] },
+  ) {
+    return request<{ answer: string; citations: { page: number; section?: string; preview?: string }[] }>(
+      `/projects/${projectId}/documents/${docId}/chat`,
+      { method: 'POST', body: JSON.stringify(body) },
+    )
+  },
+  synthesis(projectId: string, schemeItemId: string) {
+    return request<{ synthesis: string; passages_used: number }>(`/projects/${projectId}/synthesis`, {
+      method: 'POST',
+      body: JSON.stringify({ scheme_item_id: schemeItemId }),
+    })
+  },
+  getSettings(projectId: string) {
+    return request<Record<string, unknown>>(`/projects/${projectId}/settings`)
+  },
+  putSettings(projectId: string, data: {
+    custom_system_prompt?: string
+    dual_coding_blind?: boolean
+    notion_webhook_url?: string
+    notion_integration_secret?: string
+    notion_parent_page_id?: string
+  }) {
+    return request<Record<string, unknown>>(`/projects/${projectId}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+  indexEmbeddings(projectId: string) {
+    return request<{ chunks_indexed: number; qdrant_upserted?: number; qdrant_enabled?: boolean }>(
+      `/projects/${projectId}/index-embeddings`,
+      { method: 'POST' },
+    )
+  },
+  vectorSearch(projectId: string, query: string, top_k = 8) {
+    return request<{ hits: { text: string; score: number; document_id?: string }[]; backend?: string }>(
+      `/projects/${projectId}/vector-search`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ query, top_k }),
+      },
+    )
+  },
+  register(email: string, password: string) {
+    return request<{ token: string; user: { id: string; email: string } }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+  },
+  login(email: string, password: string) {
+    return request<{ token: string; user: { id: string; email: string } }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+  },
+  exportDocxDraft(projectId: string) {
+    return `${BASE}/projects/${projectId}/export/docx-draft`
+  },
+  exportNvivo(projectId: string) {
+    return `${BASE}/projects/${projectId}/export/nvivo`
+  },
+  feedback(
+    projectId: string,
+    body: { evidence_id: string; document_id: string; response: string; text_preview: string },
+  ) {
+    return request<{ stored: number }>(`/projects/${projectId}/active-learning/feedback`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+  },
+  conflicts(projectId: string) {
+    return request<{
+      conflicts: Array<{
+        document_id: string
+        filename: string
+        scheme_item_id: string
+        code: string
+        reviewer_a: string
+        reviewer_b: string
+      }>
+    }>(`/projects/${projectId}/conflicts`)
+  },
+  irr(projectId: string) {
+    return request<{
+      percent_agreement?: number | null
+      cohens_kappa?: number | null
+      pairs?: number
+      note?: string
+      reviewers?: string[]
+    }>(`/projects/${projectId}/irr`)
+  },
+  zoteroAuthorize() {
+    return request<{ authorization_url: string; oauth_token: string }>('/integrations/zotero/authorize', {
+      method: 'POST',
+    })
+  },
+  zoteroStatus() {
+    return request<{ connected: boolean; username?: string; userID?: string }>('/integrations/zotero/status')
+  },
+  zoteroImport(projectId: string, limit = 20) {
+    return request<{ imported: number; items: { id: string; title: string }[] }>(
+      `/projects/${projectId}/integrations/zotero/import`,
+      { method: 'POST', body: JSON.stringify({ limit }) },
+    )
+  },
+  exportNotionPage(projectId: string, title?: string) {
+    return request<{ notion_page_id?: string; page: Record<string, unknown> }>(`/projects/${projectId}/export/notion-page`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    })
+  },
+  processCelery(projectId: string) {
+    return request<{ queued: number; note?: string; hint?: string }>(`/projects/${projectId}/process/celery`, {
+      method: 'POST',
+    })
+  },
+  vectorBackendStatus() {
+    return request<{ qdrant_configured: boolean; qdrant_url: string; hint: string }>('/system/vector-backend')
   },
 }

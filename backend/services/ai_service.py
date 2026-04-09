@@ -75,17 +75,24 @@ def generate_labels(
     text_blocks: list[TextBlock],
     scheme: list[dict],
     evidences: list[EvidenceResult] | None = None,
+    extra_context: str | None = None,
 ) -> list[LabelResult]:
     client = _get_client()
     if client:
-        return _llm_generate_labels(client, text_blocks, scheme, evidences=evidences)
+        return _llm_generate_labels(
+            client, text_blocks, scheme, evidences=evidences, extra_context=extra_context
+        )
     return _heuristic_labels(text_blocks, scheme, evidences=evidences)
 
 
-def extract_evidences(text_blocks: list[TextBlock], scheme: list[dict]) -> list[EvidenceResult]:
+def extract_evidences(
+    text_blocks: list[TextBlock],
+    scheme: list[dict],
+    extra_context: str | None = None,
+) -> list[EvidenceResult]:
     client = _get_client()
     if client:
-        return _llm_extract_evidences(client, text_blocks, scheme)
+        return _llm_extract_evidences(client, text_blocks, scheme, extra_context=extra_context)
     return _heuristic_evidences(text_blocks, scheme)
 
 
@@ -161,6 +168,7 @@ def _llm_generate_labels(
     text_blocks: list[TextBlock],
     scheme: list[dict],
     evidences: list[EvidenceResult] | None = None,
+    extra_context: str | None = None,
 ) -> list[LabelResult]:
     selected_blocks = _select_blocks_for_labeling(text_blocks)
     chunks = _chunk_text_blocks(selected_blocks, chunk_size_chars=10000)
@@ -173,10 +181,14 @@ def _llm_generate_labels(
             refs.append(f"- {ev.id} [p.{ev.page}] codes={','.join(ev.relevant_code_ids)} :: {ev.text[:180]}")
         evidence_hint = "Candidate evidence:\n" + "\n".join(refs)
 
+    project_hint = ""
+    if extra_context and extra_context.strip():
+        project_hint = f"\n\nProject-specific instructions and prior feedback:\n{extra_context.strip()}\n"
+
     merged_scores: dict[str, list[float]] = {}
     for chunk in chunks:
         prompt = f"""You are an expert academic coding assistant for systematic literature reviews (SLR).
-
+{project_hint}
 Given the document chunk and coding scheme, determine for EACH code whether the concept is Present, Absent, or Unclear.
 Use candidate evidence if provided.
 
@@ -244,7 +256,12 @@ Return ONLY valid JSON array."""
     return final
 
 
-def _llm_extract_evidences(client: "OpenAI", text_blocks: list[TextBlock], scheme: list[dict]) -> list[EvidenceResult]:
+def _llm_extract_evidences(
+    client: "OpenAI",
+    text_blocks: list[TextBlock],
+    scheme: list[dict],
+    extra_context: str | None = None,
+) -> list[EvidenceResult]:
     sentence_blocks = split_into_sentence_blocks(text_blocks)
     content_blocks = [
         b for b in sentence_blocks
@@ -260,8 +277,12 @@ def _llm_extract_evidences(client: "OpenAI", text_blocks: list[TextBlock], schem
     ]
     scheme_desc = "\n".join(f"- {s['code']}: {s['description']} (id: {s['id']})" for s in scheme)
 
-    first_pass_prompt = f"""You are an expert evidence extraction assistant for systematic literature reviews.
+    project_hint = ""
+    if extra_context and extra_context.strip():
+        project_hint = f"\n\nProject-specific instructions and prior feedback:\n{extra_context.strip()}\n"
 
+    first_pass_prompt = f"""You are an expert evidence extraction assistant for systematic literature reviews.
+{project_hint}
 Task: Select candidate evidence SENTENCES from a research paper.
 
 IMPORTANT RULES:
@@ -313,6 +334,7 @@ Return ONLY valid JSON array."""
                 f"[Item {local_idx}] sentence_index={idx}; text={b.text}; codes={code_ids}; reason={reason}"
             )
         second_pass_prompt = f"""Enrich evidence candidates with metadata.
+{project_hint}
 Return JSON array with:
 - item_index (int)
 - exact_quote (string, 1-2 precise sentences)

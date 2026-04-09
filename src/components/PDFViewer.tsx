@@ -7,6 +7,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString()
 
+const COMFORT_SCALES = [0.9, 1, 1.1, 1.25, 1.4] as const
+
+function nearestComfortScale(c: number): number {
+  return COMFORT_SCALES.reduce((a, b) => (Math.abs(b - c) < Math.abs(a - c) ? b : a))
+}
+
 interface PDFViewerProps {
   pdfUrl: string | null
   fileName: string
@@ -19,6 +25,12 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highli
   const [pageCount, setPageCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [zoom, setZoom] = useState(1.2)
+  const [readerComfort, setReaderComfort] = useState(() => {
+    const c = Number(localStorage.getItem('pdf-reader-comfort') || '1')
+    const v = Number.isFinite(c) ? Math.min(1.5, Math.max(0.85, c)) : 1
+    return nearestComfortScale(v)
+  })
+  const renderScale = zoom * readerComfort
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -76,7 +88,7 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highli
 
     try {
       const page = await doc.getPage(displayedPage)
-      const viewport = page.getViewport({ scale: zoom })
+      const viewport = page.getViewport({ scale: renderScale })
 
       const dpr = window.devicePixelRatio || 1
       canvas.width = Math.floor(viewport.width * dpr)
@@ -107,8 +119,8 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highli
           hlCtx.fillStyle = 'rgba(250, 204, 21, 0.3)'
           hlCtx.strokeStyle = 'rgba(234, 179, 8, 0.8)'
           hlCtx.lineWidth = 2
-          hlCtx.fillRect(highlightBbox.x * zoom, highlightBbox.y * zoom, highlightBbox.width * zoom, highlightBbox.height * zoom)
-          hlCtx.strokeRect(highlightBbox.x * zoom, highlightBbox.y * zoom, highlightBbox.width * zoom, highlightBbox.height * zoom)
+          hlCtx.fillRect(highlightBbox.x * renderScale, highlightBbox.y * renderScale, highlightBbox.width * renderScale, highlightBbox.height * renderScale)
+          hlCtx.strokeRect(highlightBbox.x * renderScale, highlightBbox.y * renderScale, highlightBbox.width * renderScale, highlightBbox.height * renderScale)
         }
 
         highlights
@@ -119,8 +131,8 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highli
             hlCtx.fillStyle = color
             hlCtx.strokeStyle = color.replace('0.18', '0.75')
             hlCtx.lineWidth = 1.5
-            hlCtx.fillRect(b.x * zoom, b.y * zoom, b.width * zoom, b.height * zoom)
-            hlCtx.strokeRect(b.x * zoom, b.y * zoom, b.width * zoom, b.height * zoom)
+            hlCtx.fillRect(b.x * renderScale, b.y * renderScale, b.width * renderScale, b.height * renderScale)
+            hlCtx.strokeRect(b.x * renderScale, b.y * renderScale, b.width * renderScale, b.height * renderScale)
           })
       }
     } catch (err: unknown) {
@@ -129,7 +141,7 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highli
         console.error('PDF render error:', err)
       }
     }
-  }, [displayedPage, zoom, highlightBbox, highlights, highlightPage])
+  }, [displayedPage, renderScale, highlightBbox, highlights, highlightPage])
 
   useEffect(() => {
     renderPage()
@@ -203,13 +215,33 @@ function PDFViewerInner({ pdfUrl, fileName, highlightPage, highlightBbox, highli
           )}
         </div>
         <div className="flex items-center gap-0.5">
-          <button onClick={() => setZoom(Math.max(0.5, zoom - 0.2))} className="rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Zoom out">
+          <button type="button" onClick={() => setZoom(Math.max(0.5, zoom - 0.2))} className="min-h-[44px] min-w-[44px] touch-manipulation rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Zoom out">
             <ZoomOut className="h-3.5 w-3.5" />
           </button>
-          <span className="text-[10px] text-surface-400 w-9 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(Math.min(3, zoom + 0.2))} className="rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Zoom in">
+          <span className="text-[10px] text-surface-400 w-9 text-center tabular-nums">{Math.round(renderScale * 100)}%</span>
+          <button type="button" onClick={() => setZoom(Math.min(3, zoom + 0.2))} className="min-h-[44px] min-w-[44px] touch-manipulation rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Zoom in">
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
+          <label className="ml-1 flex items-center gap-1 text-[10px] text-surface-500">
+            <span className="hidden sm:inline">Comfort</span>
+            <select
+              value={String(readerComfort)}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                if (!Number.isFinite(v)) return
+                setReaderComfort(v)
+                localStorage.setItem('pdf-reader-comfort', String(v))
+              }}
+              className="max-w-[72px] rounded border border-surface-200 bg-white px-1 py-1 text-[10px] dark:border-surface-600 dark:bg-surface-800"
+              aria-label="Reading comfort scale"
+            >
+              <option value="0.9">90%</option>
+              <option value="1">100%</option>
+              <option value="1.1">110%</option>
+              <option value="1.25">125%</option>
+              <option value="1.4">140%</option>
+            </select>
+          </label>
           <div className="mx-1 h-3 w-px bg-surface-200" />
           <button onClick={handleFullscreen} className="rounded p-1 text-surface-400 hover:text-surface-600 hover:bg-surface-100" aria-label="Fullscreen">
             <Maximize2 className="h-3.5 w-3.5" />
