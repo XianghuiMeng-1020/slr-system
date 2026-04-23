@@ -129,6 +129,7 @@ interface AppState {
 
   setMode: (mode: Mode) => void
   createProject: (mode: Mode) => Promise<string>
+  loadExistingProject: (id: string) => Promise<void>
   ensureValidProject: () => Promise<boolean>
   hydrateProjectData: () => Promise<void>
   uploadDocuments: (files: File[]) => Promise<void>
@@ -198,6 +199,28 @@ export const useAppStore = create<AppState>()(
           get().addToast('error', `Failed to create project: ${msg}`)
           throw e
         }
+      },
+
+      loadExistingProject: async (id: string) => {
+        const valid = await api.validateProject(id.trim())
+        if (!valid) throw new Error('Project not found. Please check the ID and try again.')
+        // Load coding scheme to infer mode
+        let inferredMode: Mode = 'theme-verification'
+        try {
+          const scheme = await api.getCodingScheme(id.trim())
+          if (scheme.length === 0) inferredMode = 'theme-verification'
+        } catch { /* keep default */ }
+        set({
+          projectId: id.trim(),
+          mode: inferredMode,
+          documents: [],
+          codingScheme: [],
+          codingSchemeFileName: null,
+          currentDocumentIndex: 0,
+          processTaskId: null,
+          processProgress: null,
+        })
+        await get().hydrateProjectData()
       },
 
       ensureValidProject: async () => {
