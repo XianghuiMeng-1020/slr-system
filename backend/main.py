@@ -636,6 +636,21 @@ def get_document_pdf(project_id: str, doc_id: str, db: Session = Depends(get_db)
     return FileResponse(doc.file_path, media_type="application/pdf", filename=doc.filename)
 
 
+@app.get("/api/projects/{project_id}/documents/{doc_id}/text")
+def get_document_text(project_id: str, doc_id: str, db: Session = Depends(get_db)):
+    """Return plain-text content for text-only (non-PDF) documents."""
+    doc = db.query(Document).filter(Document.id == doc_id, Document.project_id == project_id).first()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if not doc.text_blocks_cache:
+        raise HTTPException(404, "No text content available for this document")
+    text = "\n\n".join(
+        b.get("text", "") if isinstance(b, dict) else str(b)
+        for b in doc.text_blocks_cache
+    )
+    return _ok({"text": text.strip(), "filename": doc.filename, "is_text_only": not doc.file_path})
+
+
 def _post_notion_webhook_safe(url: str, payload: dict) -> None:
     try:
         import httpx

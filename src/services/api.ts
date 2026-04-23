@@ -184,6 +184,12 @@ export const api = {
     return `${BASE}/projects/${projectId}/documents/${docId}/pdf`
   },
 
+  getDocumentText(projectId: string, docId: string) {
+    return request<{ text: string; filename: string; is_text_only: boolean }>(
+      `/projects/${projectId}/documents/${docId}/text`,
+    )
+  },
+
   updateLabels(
     projectId: string,
     docId: string,

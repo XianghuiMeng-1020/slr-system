@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   BookOpen,
@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   FileText,
   Loader2,
+  AlignLeft,
 } from 'lucide-react'
 import { useAppStore, type DocumentLabel } from '../store/useAppStore'
 import { api } from '../services/api'
@@ -132,7 +133,17 @@ export default function ThemeVerificationPage() {
   const [editingLabel, setEditingLabel] = useState<string | null>(null)
   const [exportFormat, setExportFormat] = useState<'excel' | 'csv' | 'json' | 'bibtex' | 'ris'>('excel')
 
+  // Track which docs have had their detail loaded to prevent infinite loop
+  const loadedDocIds = useRef<Set<string>>(new Set())
+  const [labelsLoading, setLabelsLoading] = useState(false)
+
+  // Text viewer state for text-only documents
+  const [docText, setDocText] = useState<string | null>(null)
+  const [docTextLoading, setDocTextLoading] = useState(false)
+  const loadedTextDocIds = useRef<Set<string>>(new Set())
+
   const currentDoc = documents[currentDocumentIndex]
+  const isTextDoc = Boolean(currentDoc?.name?.toLowerCase().endsWith('.txt'))
 
   useEffect(() => {
     if (documents.length === 0) {
@@ -140,11 +151,27 @@ export default function ThemeVerificationPage() {
     }
   }, [documents.length, hydrateProjectData])
 
+  // Fix: only load detail once per document, not in a loop
   useEffect(() => {
-    if (currentDoc && currentDoc.labels.length === 0 && currentDoc.status === 'completed') {
-      loadDocumentDetail(currentDoc.id)
-    }
-  }, [currentDoc, loadDocumentDetail])
+    if (!currentDoc) return
+    if (loadedDocIds.current.has(currentDoc.id)) return
+    loadedDocIds.current.add(currentDoc.id)
+    setLabelsLoading(true)
+    loadDocumentDetail(currentDoc.id).finally(() => setLabelsLoading(false))
+  }, [currentDoc?.id, loadDocumentDetail])
+
+  // Load text content for text-only documents
+  useEffect(() => {
+    if (!currentDoc || !isTextDoc || !projectId) return
+    if (loadedTextDocIds.current.has(currentDoc.id)) return
+    loadedTextDocIds.current.add(currentDoc.id)
+    setDocText(null)
+    setDocTextLoading(true)
+    api.getDocumentText(projectId, currentDoc.id)
+      .then((res) => setDocText(res.text))
+      .catch(() => setDocText(null))
+      .finally(() => setDocTextLoading(false))
+  }, [currentDoc?.id, isTextDoc, projectId])
 
   const handleLabelChange = useCallback(
     (codeId: string, value: LabelValue) => {
@@ -248,9 +275,32 @@ export default function ThemeVerificationPage() {
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* PDF viewer */}
-        <div className="w-1/2 p-2">
-          <PDFViewer pdfUrl={pdfUrl} fileName={currentDoc.name} />
+        {/* Left: PDF viewer OR text viewer */}
+        <div className="w-1/2 p-2 flex flex-col overflow-hidden">
+          {isTextDoc ? (
+            <div className="flex flex-col h-full rounded-lg border border-surface-200 bg-white overflow-hidden">
+              <div className="flex items-center gap-2 border-b border-surface-100 px-4 py-2.5 shrink-0">
+                <AlignLeft className="h-4 w-4 text-surface-400" />
+                <span className="text-xs font-medium text-surface-600 truncate">{currentDoc.name}</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                {docTextLoading ? (
+                  <div className="flex h-full items-center justify-center text-surface-400">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    <span className="text-xs">Loading content…</span>
+                  </div>
+                ) : docText ? (
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-surface-700">{docText}</pre>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-surface-400">
+                    <p className="text-xs">No text content available.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <PDFViewer pdfUrl={pdfUrl} fileName={currentDoc.name} />
+          )}
         </div>
 
         {/* Labels panel */}
@@ -276,10 +326,10 @@ export default function ThemeVerificationPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-3">
-            {currentDoc.labels.length === 0 ? (
+            {labelsLoading ? (
               <div className="flex flex-col items-center justify-center h-full text-surface-400">
                 <Loader2 className="h-7 w-7 animate-spin mb-2" />
-                <p className="text-xs">Loading labels...</p>
+                <p className="text-xs">Loading labels…</p>
               </div>
             ) : (
               Object.entries(groupedScheme).map(([category, items]) => (
