@@ -712,6 +712,26 @@ def conflicts(project_id: str, db: Session = Depends(get_db)):
 # --- Project members ---
 
 
+@router.get("/api/projects/{project_id}/members")
+def list_members(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not db.query(Project).filter(Project.id == project_id).first():
+        raise HTTPException(404, "Project not found")
+    members = (
+        db.query(ProjectMember, User)
+        .join(User, User.id == ProjectMember.user_id)
+        .filter(ProjectMember.project_id == project_id)
+        .all()
+    )
+    return _ok([
+        {"user_id": m.user_id, "email": u.email, "role": m.role}
+        for m, u in members
+    ])
+
+
 @router.post("/api/projects/{project_id}/members")
 def add_member(
     project_id: str,

@@ -372,4 +372,12 @@ export const phase2 = {
   vectorBackendStatus() {
     return request<{ qdrant_configured: boolean; qdrant_url: string; hint: string }>('/system/vector-backend')
   },
+  listMembers(projectId: string) {
+    return request<{ user_id: string; email: string; role: string }[]>(`/projects/${projectId}/members`)
+  },
+  addMember(projectId: string, email: string) {
+    return request<{ status: string }>(`/projects/${projectId}/members?email=${encodeURIComponent(email)}`, {
+      method: 'POST',
+    })
+  },
 }
